@@ -1,0 +1,21 @@
+# Private studio data (original photos, GPS, drafts)
+.local/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+**/originals/
+**/thumbs/
+**/previews/
+.env
+.env.*
+!.env.example
+**/__pycache__/
+**/.pytest_cache/
+.venv*/
+**/.venv*/
+**/node_modules/
+**/dist/
+.superpowers/
+.DS_Store
+*.pyc
+*.tsbuildinfo
