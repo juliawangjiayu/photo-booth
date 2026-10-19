@@ -40,7 +40,29 @@ export type Photo = {
 export type Collection = { id: string; title: string; description: string; count: number };
 export type Stats = { photos: number; ready: number; needReview: number; gamePool: number; collections: number };
 export type Settings = { web_root: string; maptiler_key: string };
-export type Place = { name: string; latitude: number; longitude: number; country: string; region: string; city: string; district: string; match_quality?: 'broader' };
+export type GoogleMapsBootstrap = { apiKey: string; mapId: string };
+export type GoogleMapsConfig = {
+  apiKeyConfigured: boolean;
+  apiKeyMask: string;
+  mapId: string;
+};
+export type GoogleMapsConfigInput = {
+  api_key?: string;
+  clear_api_key?: boolean;
+  map_id: string;
+};
+export type Place = {
+  id?: string;
+  name: string;
+  formattedAddress?: string;
+  latitude: number;
+  longitude: number;
+  country: string;
+  region: string;
+  city: string;
+  district: string;
+  match_quality?: 'broader';
+};
 export type PublishPreview = { ready: number; issues: {id:string; name:string; problems:string[]}[]; unconfirmedGameEntries:number; note:string };
 export type GradeResult = { result:'correct'|'close'|'incorrect'; score:number; confidence:number; explanation:string; distance_km?:number };
 export type ImportResult = {

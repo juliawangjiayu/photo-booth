@@ -1,4 +1,4 @@
-import type { Collection, GradeResult, Guess, ImportResult, Photo, PhotoReviewInput, Place, PublishPreview, Settings, Stats } from './types';
+import type { Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, Photo, PhotoReviewInput, Place, PublishPreview, Settings, Stats } from './types';
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, options);
@@ -39,6 +39,9 @@ export const api = {
   reverse: (latitude: number, longitude: number) => request<Place>(`/api/reverse?latitude=${latitude}&longitude=${longitude}`),
   settings: () => request<Settings>('/api/settings'),
   updateSettings: (settings: Partial<Settings>) => request<Settings>('/api/settings', json('PATCH', settings)),
+  googleMapsConfig: () => request<GoogleMapsConfig>('/api/maps/config'),
+  updateGoogleMapsConfig: (config: GoogleMapsConfigInput) => request<GoogleMapsConfig>('/api/maps/config', json('PUT', config)),
+  googleMapsBootstrap: () => request<GoogleMapsBootstrap>('/api/maps/bootstrap'),
   publishPreview: () => request<PublishPreview>('/api/publish/preview'),
   export: (web_root: string) => request<{count:number; skipped:PublishPreview['issues'];webRoot:string}>('/api/publish/export', json('POST',{web_root})),
   github: (web_root: string, message: string) => request<{pushed:boolean;message?:string;branch?:string}>('/api/publish/github', json('POST',{web_root,message})),
