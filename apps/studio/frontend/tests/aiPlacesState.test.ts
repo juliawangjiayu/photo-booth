@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyAiTestResult,
+  canPublishActiveConfig,
   canActivateAiDraft,
   canPublishAiDraft,
   clearSecretInput,
@@ -66,6 +67,15 @@ test('publishing stays disabled without a matching test and an HTTPS endpoint', 
   assert.equal(canPublishAiDraft(draft, 'http://example.com/admin'), false);
   assert.equal(canPublishAiDraft({...draft, tested_hash: 'stale'}, 'https://example.com/admin'), false);
   assert.equal(canPublishAiDraft(draft, 'https://example.com/admin'), true);
+});
+
+test('remote publishing requires token, tested draft, and the same active hash', () => {
+  const active = {config_hash: 'hash-tested'};
+  const remote = {endpoint: 'https://photos.example/config', tokenConfigured: true};
+  assert.equal(canPublishActiveConfig(draft, active, remote), true);
+  assert.equal(canPublishActiveConfig(draft, {...active, config_hash: 'older'}, remote), false);
+  assert.equal(canPublishActiveConfig(draft, active, {...remote, tokenConfigured: false}), false);
+  assert.equal(canPublishActiveConfig({...draft, tested_hash: 'stale'}, active, remote), false);
 });
 
 test('secret inputs are cleared even if a server payload accidentally includes a value', () => {

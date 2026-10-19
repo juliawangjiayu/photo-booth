@@ -1,4 +1,4 @@
-import type { AiDraftInput, AiPlaceConfig, AiPlaceDraft, AiPlaceTestResult, AiPlaceVersion, Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, MaskedSecret, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
+import type { AiDraftInput, AiPlaceConfig, AiPlaceDraft, AiPlaceTestResult, AiPlaceVersion, AiPublishReceipt, AiRemoteState, Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, MaskedSecret, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, options);
@@ -54,6 +54,8 @@ export const api = {
   activateAiPlaces: () => request<AiPlaceVersion>('/api/ai-places/activate', {method: 'POST'}),
   aiPlaceVersions: () => request<AiPlaceVersion[]>('/api/ai-places/versions'),
   restoreAiPlaceVersion: (version: number) => request<AiPlaceDraft>(`/api/ai-places/versions/${version}/restore`, {method: 'POST'}),
+  updateAiPlacesRemote: (body: {endpoint?: string; publisher_token?: string; clear_token?: boolean}) => request<AiRemoteState>('/api/ai-places/remote', json('PUT', body)),
+  publishAiPlaces: (includeDeepSeekKey = false) => request<AiPublishReceipt>('/api/ai-places/publish', json('POST', {include_deepseek_key: includeDeepSeekKey})),
   publishPreview: () => request<PublishPreview>('/api/publish/preview'),
   export: (web_root: string) => request<{count:number; skipped:PublishPreview['issues'];webRoot:string}>('/api/publish/export', json('POST',{web_root})),
   github: (web_root: string, message: string) => request<{pushed:boolean;message?:string;branch?:string}>('/api/publish/github', json('POST',{web_root,message})),

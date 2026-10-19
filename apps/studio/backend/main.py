@@ -25,6 +25,7 @@ from .ai_config import (
     version_dict,
 )
 from .ai_places import PlaceInterpretationError, interpret_place
+from .ai_publish import AiPublishError, build_release, normalize_endpoint, publish_release
 
 LOCAL_UI_ORIGINS = {
     "http://127.0.0.1:5173",
@@ -164,6 +165,18 @@ class AiSecretInput(BaseModel):
 
 class AiPlaceTestInput(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+
+
+class AiRemoteInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    endpoint: str | None = Field(default=None, max_length=500)
+    publisher_token: str | None = Field(default=None, max_length=1000)
+    clear_token: bool = False
+
+
+class AiPublishInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    include_deepseek_key: bool = False
 
 class ExportInput(BaseModel):
     web_root: str = Field(min_length=1)
@@ -519,11 +532,31 @@ def _ai_secret_state(secrets: SecretStore) -> dict:
     return {'configured': bool(value), 'mask': _masked_secret(value)}
 
 
+def _ai_remote_state(conn, secrets: SecretStore) -> dict:
+    token = secrets.get('ai-place-publisher-token')
+    last = conn.execute(
+        """SELECT version,remote_published_at,remote_publish_receipt
+           FROM ai_place_versions WHERE remote_published_at IS NOT NULL
+           ORDER BY remote_published_at DESC,version DESC LIMIT 1"""
+    ).fetchone()
+    return {
+        'endpoint': setting(conn, 'ai_place_remote_endpoint'),
+        'tokenConfigured': bool(token),
+        'tokenMask': _masked_secret(token),
+        'lastPublishedVersion': last['version'] if last else None,
+        'lastPublishedAt': last['remote_published_at'] if last else None,
+        'lastReceipt': last['remote_publish_receipt'] if last else '',
+    }
+
+
 @app.get('/api/ai-places/config')
 def get_ai_places_config(conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
     draft = load_or_create_draft(conn)
     active = next((version_dict(item) for item in list_versions(conn) if item.version == draft.active_version), None)
-    return {'draft': draft_dict(draft), 'active': active, 'secret': _ai_secret_state(secrets)}
+    return {
+        'draft': draft_dict(draft), 'active': active,
+        'secret': _ai_secret_state(secrets), 'remote': _ai_remote_state(conn, secrets),
+    }
 
 
 @app.patch('/api/ai-places/draft')
@@ -589,6 +622,62 @@ def restore_ai_places_version(version: int, conn=Depends(db)):
         return draft_dict(restore_version(conn, version))
     except AiConfigError as error:
         raise HTTPException(404, str(error)) from None
+
+
+@app.put('/api/ai-places/remote')
+def update_ai_places_remote(body: AiRemoteInput, conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    if body.clear_token and body.publisher_token is not None:
+        raise HTTPException(422, 'Choose a replacement publisher token or clear the existing token')
+    if body.endpoint is not None:
+        endpoint = body.endpoint.strip()
+        if endpoint:
+            try:
+                endpoint = normalize_endpoint(endpoint)
+            except AiPublishError as error:
+                raise HTTPException(422, str(error)) from None
+        set_setting(conn, 'ai_place_remote_endpoint', endpoint)
+    if body.clear_token:
+        secrets.delete('ai-place-publisher-token')
+    elif body.publisher_token is not None:
+        token = body.publisher_token.strip()
+        if not token:
+            raise HTTPException(422, 'Publisher token cannot be blank')
+        secrets.set('ai-place-publisher-token', token)
+    conn.commit()
+    return _ai_remote_state(conn, secrets)
+
+
+@app.post('/api/ai-places/publish')
+def publish_ai_places(body: AiPublishInput, conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    draft = load_or_create_draft(conn)
+    if not draft.active_version:
+        raise HTTPException(409, 'Activate a tested configuration before publishing')
+    active = next((item for item in list_versions(conn) if item.version == draft.active_version), None)
+    if not active:
+        raise HTTPException(409, 'The locally active configuration could not be found')
+    if draft.test_state != 'passed' or draft.tested_hash != draft.config_hash or active.config_hash != draft.config_hash:
+        raise HTTPException(409, 'Test and activate the exact current draft before publishing')
+    endpoint = setting(conn, 'ai_place_remote_endpoint')
+    token = secrets.get('ai-place-publisher-token')
+    deepseek_key = secrets.get('deepseek-api-key') if body.include_deepseek_key else ''
+    try:
+        release = build_release(active, body.include_deepseek_key, deepseek_key)
+        receipt = publish_release(endpoint, token, release)
+    except AiPublishError as error:
+        status = 409 if error.code in {'invalid_endpoint', 'missing_token', 'missing_key'} else 503
+        raise HTTPException(status, {'code': error.code, 'message': str(error)}) from None
+    conn.execute(
+        """UPDATE ai_place_versions SET
+             remote_published_at=CURRENT_TIMESTAMP,remote_publish_receipt=?
+           WHERE version=? AND config_hash=?""",
+        (receipt['receipt'], active.version, active.config_hash),
+    )
+    conn.commit()
+    state = _ai_remote_state(conn, secrets)
+    return {
+        'version': active.version, 'promptHash': active.config_hash,
+        'receipt': receipt['receipt'], 'publishedAt': state['lastPublishedAt'],
+    }
 
 @app.get("/api/publish/preview")
 def publish_preview(conn=Depends(db)):

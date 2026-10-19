@@ -216,6 +216,73 @@ def test_ai_places_missing_key_and_bad_origin(client):
     assert client.patch('/api/ai-places/draft', json={'model': 'other'}, headers={'Origin':'https://example.com'}).status_code == 403
 
 
+def test_ai_remote_settings_mask_token_and_keep_it_out_of_sqlite(client, secret_store):
+    initial = client.get('/api/ai-places/config').json()['remote']
+    assert initial == {
+        'endpoint': '', 'tokenConfigured': False, 'tokenMask': '',
+        'lastPublishedVersion': None, 'lastPublishedAt': None, 'lastReceipt': '',
+    }
+    token = 'publisher-private-token-123456'
+    saved = client.put('/api/ai-places/remote', json={
+        'endpoint': 'https://photos.example/config/',
+        'publisher_token': token,
+    })
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['endpoint'] == 'https://photos.example/config'
+    assert saved.json()['tokenConfigured'] is True
+    assert saved.json()['tokenMask'].endswith('3456')
+    assert token not in json.dumps(saved.json())
+    assert secret_store.get('ai-place-publisher-token') == token
+
+    from backend.db import connect
+    conn = connect()
+    try:
+        stored = json.dumps([dict(row) for row in conn.execute('SELECT * FROM settings')])
+    finally:
+        conn.close()
+    assert 'https://photos.example/config' in stored
+    assert token not in stored
+
+
+def test_ai_publish_sends_active_release_and_records_only_matching_receipt(client, secret_store, monkeypatch):
+    from backend import main
+    from backend.ai_config import activate_draft, load_or_create_draft, record_test
+    from backend.db import connect
+
+    conn = connect()
+    try:
+        draft = load_or_create_draft(conn)
+        record_test(conn, draft.config_hash, 'passed')
+        active = activate_draft(conn)
+    finally:
+        conn.close()
+    secret_store.set('ai-place-publisher-token', 'publisher-private')
+    secret_store.set('deepseek-api-key', 'sk-production-rotation')
+    assert client.put('/api/ai-places/remote', json={'endpoint': 'https://photos.example/config'}).status_code == 200
+
+    captured = []
+    def fake_publish(endpoint, token, release):
+        captured.append((endpoint, token, release))
+        return {'version': active.version, 'promptHash': active.config_hash, 'receipt': 'receipt-live-7'}
+    monkeypatch.setattr(main, 'publish_release', fake_publish)
+
+    ordinary = client.post('/api/ai-places/publish', json={'include_deepseek_key': False})
+    assert ordinary.status_code == 200, ordinary.text
+    assert ordinary.json()['receipt'] == 'receipt-live-7'
+    assert 'deepSeekApiKey' not in captured[0][2]
+    assert 'publisher-private' not in json.dumps(ordinary.json())
+
+    rotated = client.post('/api/ai-places/publish', json={'include_deepseek_key': True})
+    assert rotated.status_code == 200, rotated.text
+    assert captured[1][2]['deepSeekApiKey'] == 'sk-production-rotation'
+    assert 'sk-production-rotation' not in json.dumps(rotated.json())
+
+    remote = client.get('/api/ai-places/config').json()['remote']
+    assert remote['lastPublishedVersion'] == active.version
+    assert remote['lastReceipt'] == 'receipt-live-7'
+    assert remote['lastPublishedAt']
+
+
 def test_import_requires_an_existing_collection_before_processing(client):
     missing = client.post('/api/photos/import', files={
         'files': ('photo.jpg', photo_bytes(), 'image/jpeg'),

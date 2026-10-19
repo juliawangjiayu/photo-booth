@@ -86,10 +86,25 @@ export type AiPlaceVersion = {
   remote_published_at: string | null;
   remote_publish_receipt: string | null;
 };
+export type AiRemoteState = {
+  endpoint: string;
+  tokenConfigured: boolean;
+  tokenMask: string;
+  lastPublishedVersion: number | null;
+  lastPublishedAt: string | null;
+  lastReceipt: string;
+};
+export type AiPublishReceipt = {
+  version: number;
+  promptHash: string;
+  receipt: string;
+  publishedAt: string;
+};
 export type AiPlaceConfig = {
   draft: AiPlaceDraft;
   active: AiPlaceVersion | null;
   secret: MaskedSecret;
+  remote: AiRemoteState;
 };
 export type AiDraftInput = Partial<Pick<AiPlaceDraft,
   'provider' | 'base_url' | 'model' | 'timeout_seconds' | 'retry_count' | 'prompt_text'

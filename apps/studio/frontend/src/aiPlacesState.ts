@@ -48,6 +48,19 @@ export function canPublishAiDraft(draft: AiPlaceDraft, endpoint: string): boolea
   }
 }
 
+export function canPublishActiveConfig(
+  draft: AiPlaceDraft,
+  active: Pick<AiPlaceVersion, 'config_hash'> | null,
+  remote: {endpoint: string; tokenConfigured: boolean},
+): boolean {
+  return Boolean(
+    active
+    && remote.tokenConfigured
+    && active.config_hash === draft.config_hash
+    && canPublishAiDraft(draft, remote.endpoint),
+  );
+}
+
 export function clearSecretInput(_response?: unknown): string {
   return '';
 }

@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {api} from './api';
-import {canActivateAiDraft, clearSecretInput, editAiDraft} from './aiPlacesState';
+import {canActivateAiDraft, canPublishActiveConfig, clearSecretInput, editAiDraft} from './aiPlacesState';
 import {loadGoogleMaps, searchGooglePlaces} from './googleMaps';
 import type {
   AiDraftInput,
@@ -49,6 +49,10 @@ export default function AiPlacesPage({notify}: Props) {
   const [versions, setVersions] = useState<AiPlaceVersion[]>([]);
   const [deepSeekKey, setDeepSeekKey] = useState('');
   const [googleKey, setGoogleKey] = useState('');
+  const [publisherToken, setPublisherToken] = useState('');
+  const [remoteEndpoint, setRemoteEndpoint] = useState('');
+  const [remoteDirty, setRemoteDirty] = useState(false);
+  const [remoteError, setRemoteError] = useState('');
   const [draftDirty, setDraftDirty] = useState(false);
   const [mapsDirty, setMapsDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -67,10 +71,12 @@ export default function AiPlacesPage({notify}: Props) {
       api.aiPlaceVersions(),
     ]);
     setConfig(nextConfig);
+    setRemoteEndpoint(nextConfig.remote.endpoint);
     setMaps(nextMaps);
     setVersions(nextVersions);
     setDraftDirty(false);
     setMapsDirty(false);
+    setRemoteDirty(false);
   }, []);
 
   useEffect(() => {
@@ -249,9 +255,73 @@ export default function AiPlacesPage({notify}: Props) {
     }
   };
 
+  const saveRemote = async () => {
+    setBusy(true);
+    try {
+      const remote = await api.updateAiPlacesRemote({
+        endpoint: remoteEndpoint,
+        publisher_token: publisherToken.trim() || undefined,
+      });
+      setConfig(current => current ? {...current, remote} : current);
+      setRemoteEndpoint(remote.endpoint);
+      setPublisherToken('');
+      setRemoteDirty(false);
+      setRemoteError('');
+      setStatus(remote.endpoint && remote.tokenConfigured
+        ? 'Website publishing connection saved.'
+        : 'Remote publishing remains disconnected. Local activation still works.');
+      notify('Remote publishing settings saved.');
+    } catch (error) {
+      setPublisherToken('');
+      notify(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearPublisherToken = async () => {
+    if (!window.confirm('Remove the website publisher token from macOS Keychain?')) return;
+    setBusy(true);
+    try {
+      const remote = await api.updateAiPlacesRemote({clear_token: true});
+      setConfig(current => current ? {...current, remote} : current);
+      setRemoteEndpoint(remote.endpoint);
+      setPublisherToken('');
+      setRemoteDirty(false);
+      setStatus('Website publisher token removed.');
+      notify('Publisher token removed.');
+    } catch (error) {
+      notify(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const publishRemote = async (rotateDeepSeekKey: boolean) => {
+    if (rotateDeepSeekKey && !window.confirm('Replace the production DeepSeek key as part of this release? Ordinary releases do not resend it.')) return;
+    setBusy(true);
+    setRemoteError('');
+    try {
+      const receipt = await api.publishAiPlaces(rotateDeepSeekKey);
+      await reload();
+      setStatus(`Version ${receipt.version} published to the website. Receipt ${receipt.receipt}.`);
+      notify(`AI place configuration v${receipt.version} published.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setRemoteError(message);
+      setStatus(`Remote publication failed: ${message}`);
+      notify(message, true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const testReady = Boolean(config && !draftDirty && example.trim() && config.secret.configured);
   const activationReady = Boolean(config && !draftDirty && canActivateAiDraft(config.draft));
   const activeVersion = config?.active ?? versions.find(item => item.lifecycle_state === 'active') ?? null;
+  const publishReady = Boolean(config && !draftDirty && canPublishActiveConfig(config.draft, activeVersion, config.remote));
+  const remoteConnected = Boolean(config?.remote.endpoint && config.remote.tokenConfigured);
+  const remoteLive = Boolean(activeVersion && config?.remote.lastPublishedVersion === activeVersion.version);
   const draftHash = useMemo(() => config?.draft.config_hash.slice(0, 10) ?? '—', [config]);
 
   if (!config) {
@@ -323,12 +393,13 @@ export default function AiPlacesPage({notify}: Props) {
     {tab === 'versions' && <div className="ai-version-layout">
       <div className="ai-status-grid">
         <div className="ai-card status-card"><span className="status-icon good"><CheckCircle2 size={18}/></span><div><span>LOCAL ACTIVE</span><strong>{activeVersion ? `Version ${activeVersion.version}` : 'No active version'}</strong><small>{activeVersion ? `${activeVersion.model} · ${dateLabel(activeVersion.activated_at)}` : 'Test and activate a draft first.'}</small></div></div>
-        <div className="ai-card status-card"><span className="status-icon muted-icon"><CloudOff size={18}/></span><div><span>REMOTE WEBSITE</span><strong>Disconnected</strong><small>The publishing endpoint will be connected when the public website repository is created.</small></div></div>
+        <div className="ai-card status-card"><span className={`status-icon ${remoteLive ? 'good' : remoteError ? 'error-icon' : 'muted-icon'}`}>{remoteLive ? <CheckCircle2 size={18}/> : <CloudOff size={18}/>}</span><div><span>REMOTE WEBSITE</span><strong>{remoteLive ? `Version ${config.remote.lastPublishedVersion} live` : remoteError ? 'Publish failed' : remoteConnected ? 'Connected · not current' : 'Disconnected'}</strong><small>{remoteLive ? `${dateLabel(config.remote.lastPublishedAt)} · receipt ${config.remote.lastReceipt}` : remoteError || (remoteConnected ? 'Publish the tested local active version when ready.' : 'Add an HTTPS endpoint and publisher token below.')}</small></div></div>
       </div>
       <div className="ai-card version-card"><div className="ai-card-head"><div><span className="ai-kicker">IMMUTABLE HISTORY</span><h2>Local activated versions</h2></div><button className="outline-btn" disabled={busy} onClick={() => void reload()}><RefreshCw size={14}/> Refresh</button></div>
         {versions.length ? <div className="version-list">{versions.map(version => <article key={version.version}><div className="version-number">v{version.version}</div><div className="version-details"><div><strong>{version.model}</strong><span className={`status-pill ${version.lifecycle_state === 'active' ? 'positive' : ''}`}>{version.lifecycle_state}</span></div><p>{version.test_summary || 'Test passed'}</p><small>{dateLabel(version.activated_at)} · <code>{version.config_hash.slice(0, 10)}</code></small></div><button className="outline-btn" disabled={busy} onClick={() => void restore(version.version)}><RotateCcw size={14}/> Restore as draft</button></article>)}</div> : <p className="ai-empty">No versions have been activated yet.</p>}
       </div>
-      <div className="ai-card future-publish"><div><ExternalLink size={19}/><span><strong>Website publishing comes next</strong><small>The future HTTPS receiver will accept a tested active configuration without exposing your admin keys.</small></span></div><button className="outline-btn" disabled>Publish to website</button></div>
+      <div className="ai-card remote-config-card"><div className="ai-card-head"><div><span className="ai-kicker">SECURE CONNECTION</span><h2>Website publishing endpoint</h2></div><ExternalLink size={19}/></div><p>The public website receiver is optional. The endpoint is stored in SQLite; the publisher token stays in macOS Keychain and is never shown again.</p><div className="remote-form"><label className="field">HTTPS website endpoint<input inputMode="url" value={remoteEndpoint} onChange={event => {setRemoteEndpoint(event.target.value); setRemoteDirty(true);}} placeholder="https://photos.example.com"/><small>Photo Booth appends <code>/api/admin/ai-place-config</code>.</small></label><label className="field">Replace publisher token <span className="optional">{config.remote.tokenConfigured ? `configured · ${config.remote.tokenMask}` : 'not configured'}</span><input type="password" autoComplete="new-password" value={publisherToken} onChange={event => {setPublisherToken(event.target.value); setRemoteDirty(true);}} placeholder={config.remote.tokenConfigured ? 'Paste only to replace' : 'Paste publisher token'}/></label></div><div className="ai-action-row"><button className="outline-btn" disabled={busy || !remoteDirty} onClick={() => void saveRemote()}><Save size={14}/> Save connection</button>{config.remote.tokenConfigured && <button className="text-danger" onClick={() => void clearPublisherToken()}>Remove token</button>}</div></div>
+      <div className="ai-card future-publish"><div><ExternalLink size={19}/><span><strong>{publishReady ? `Version ${activeVersion?.version} is ready to publish` : 'Remote release is locked'}</strong><small>{publishReady ? 'Only versioned model and prompt settings are sent. Private photo answers and scoring data are excluded.' : 'Connect the website, then test and activate the exact current draft.'}</small></span></div><div className="publish-button-stack"><button className="primary-btn" disabled={busy || !publishReady} onClick={() => void publishRemote(false)}>Publish to website</button><button className="outline-btn" disabled={busy || !publishReady || !config.secret.configured} onClick={() => void publishRemote(true)}>Publish + replace production key</button></div></div>
     </div>}
   </section>;
 }
