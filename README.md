@@ -61,6 +61,16 @@ API documentation (local only): http://127.0.0.1:8000/docs
 
 Photo Booth uses Google Maps JavaScript API for the Pin editor and answer-radius circle, and Places API (New) for place candidates. Add a browser key under Settings; Photo Booth stores the full value in macOS Keychain, while SQLite keeps only the non-secret Map ID. Restrict the key in Google Cloud to the required APIs and local HTTP referrers.
 
+Google Cloud setup:
+
+1. Create or choose a Google Cloud project with billing enabled. Google Maps Platform requires billing even when usage remains within available credits.
+2. Enable **Maps JavaScript API** and **Places API (New)** for that project.
+3. Create an API key with **Websites** application restrictions. Add `http://127.0.0.1:5173/*` and `http://localhost:5173/*` as allowed referrers.
+4. Restrict the key to only **Maps JavaScript API** and **Places API (New)**, then paste it into Photo Booth → Settings.
+5. Keep `DEMO_MAP_ID` while testing, or create a Map ID in Google Cloud and save it alongside the key. Advanced Markers require a Map ID.
+
+The future public website should use a separate browser key restricted to its production domains. Do not reuse an unrestricted local-development key in a deployed site, and never commit either key to Git.
+
 Guess Where search accepts Chinese, English, and mixed descriptions and returns at most five Google Places candidates. Choosing a candidate only positions the draft Pin: you must still inspect the map and explicitly confirm it. The Pin can always be entered as latitude/longitude even when maps or search are unavailable. These online services require Internet access.
 
 When GPS exists, the Guess Where map may open at that position. GPS is never used as a confirmed game answer without explicit approval in the map editor.
@@ -127,7 +137,7 @@ Frontend type/build check (requires npm dependencies):
 
 ```bash
 cd apps/studio/frontend
-node --test tests/connection.test.ts tests/reviewWorkflow.test.ts
+node --test tests/*.test.ts
 npm run build
 ```
 
