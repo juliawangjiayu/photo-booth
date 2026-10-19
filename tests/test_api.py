@@ -165,6 +165,57 @@ def test_google_map_config_rejects_non_local_mutation_origin(client, secret_stor
     assert secret_store.get("google-maps-browser-key") == ""
 
 
+def test_ai_places_config_masks_key_and_rejects_activation_before_test(client, secret_store):
+    config = client.get('/api/ai-places/config')
+    assert config.status_code == 200
+    assert config.json()['draft']['model'] == 'deepseek-flash'
+    assert config.json()['secret']['configured'] is False
+    assert client.post('/api/ai-places/activate').status_code == 409
+    saved = client.put('/api/ai-places/secrets/deepseek', json={'api_key': 'sk-local-private'})
+    assert saved.status_code == 200
+    assert saved.json()['configured'] is True
+    assert 'sk-local-private' not in json.dumps(saved.json())
+    assert secret_store.get('deepseek-api-key') == 'sk-local-private'
+
+
+def test_ai_places_draft_test_activate_and_restore(client, secret_store, monkeypatch):
+    from backend import main
+    from backend.ai_places import PlaceInterpretation
+    secret_store.set('deepseek-api-key', 'sk-private')
+    output = PlaceInterpretation.model_validate({
+        'status': 'searchable', 'normalized_query': '晋江 老城区 福建 中国',
+        'landmark': '', 'locality': '晋江', 'region': '福建', 'country': '中国',
+        'category': '老城区', 'uncertainty': ['可能是晋江'], 'confidence': 0.62,
+        'clarification': '',
+    })
+    monkeypatch.setattr(main, 'interpret_place', lambda text, config, key: output)
+    first = client.get('/api/ai-places/config').json()['draft']
+    tested = client.post('/api/ai-places/test', json={'text': '比较老城区，可能是晋江'})
+    assert tested.status_code == 200, tested.text
+    assert tested.json()['interpretation']['normalized_query'] == '晋江 老城区 福建 中国'
+    assert tested.json()['testedHash'] == first['config_hash']
+    assert tested.json()['modelLatencyMs'] >= 0
+    active = client.post('/api/ai-places/activate')
+    assert active.status_code == 200, active.text
+    assert active.json()['version'] == 1
+    changed = client.patch('/api/ai-places/draft', json={'model': 'deepseek-v4-pro'})
+    assert changed.status_code == 200
+    assert changed.json()['test_state'] == 'untested'
+    assert client.post('/api/ai-places/activate').status_code == 409
+    history = client.get('/api/ai-places/versions').json()
+    assert len(history) == 1 and history[0]['model'] == 'deepseek-flash'
+    restored = client.post('/api/ai-places/versions/1/restore')
+    assert restored.status_code == 200
+    assert restored.json()['model'] == 'deepseek-flash'
+    assert restored.json()['test_state'] == 'untested'
+    assert client.get('/api/ai-places/versions').json() == history
+
+
+def test_ai_places_missing_key_and_bad_origin(client):
+    assert client.post('/api/ai-places/test', json={'text': '海边'}).status_code == 503
+    assert client.patch('/api/ai-places/draft', json={'model': 'other'}, headers={'Origin':'https://example.com'}).status_code == 403
+
+
 def test_import_requires_an_existing_collection_before_processing(client):
     missing = client.post('/api/photos/import', files={
         'files': ('photo.jpg', photo_bytes(), 'image/jpeg'),

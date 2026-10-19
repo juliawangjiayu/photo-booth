@@ -165,12 +165,14 @@ def record_test(conn: sqlite3.Connection, prompt_hash: str, summary: str) -> AiC
         raise AiConfigConflict("Test result does not match the current draft")
     summary = summary.strip()[:2000]
     with conn:
-        conn.execute(
+        cursor = conn.execute(
             """UPDATE ai_place_draft SET
                  test_state='passed',tested_hash=?,test_summary=?,updated_at=CURRENT_TIMESTAMP
                WHERE singleton_id=1 AND config_hash=?""",
             (prompt_hash, summary, prompt_hash),
         )
+        if cursor.rowcount != 1:
+            raise AiConfigConflict("Test result does not match the current draft")
     return load_or_create_draft(conn)
 
 
@@ -179,6 +181,9 @@ def activate_draft(conn: sqlite3.Connection) -> AiConfigVersion:
     if current.test_state != "passed" or current.tested_hash != current.config_hash:
         raise AiConfigNotTested("Test the exact current draft before activating it")
     with conn:
+        latest = conn.execute('SELECT config_hash,test_state,tested_hash FROM ai_place_draft WHERE singleton_id=1').fetchone()
+        if not latest or latest['config_hash'] != current.config_hash or latest['test_state'] != 'passed' or latest['tested_hash'] != current.config_hash:
+            raise AiConfigNotTested('Test the exact current draft before activating it')
         conn.execute(
             "UPDATE ai_place_versions SET lifecycle_state='superseded' WHERE lifecycle_state='active'",
         )

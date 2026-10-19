@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,12 @@ from .publish import collect, export_site, publish_git
 from .grading import grade_pin, grade_text
 from .review import ReviewValidationError, apply_review, validate_review_date
 from .secret_store import SecretStore, get_secret_store
+from .ai_config import (
+    AiConfigConflict, AiConfigError, activate_draft, draft_dict,
+    list_versions, load_or_create_draft, restore_version, save_draft, record_test,
+    version_dict,
+)
+from .ai_places import PlaceInterpretationError, interpret_place
 
 LOCAL_UI_ORIGINS = {
     "http://127.0.0.1:5173",
@@ -140,6 +147,26 @@ class GoogleMapsConfigInput(BaseModel):
     api_key: str | None = Field(default=None, max_length=500)
     clear_api_key: bool = False
     map_id: str = Field(default="DEMO_MAP_ID", max_length=200)
+
+
+class AiDraftInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    provider: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    timeout_seconds: int | None = None
+    retry_count: int | None = None
+    prompt_text: str | None = None
+
+
+class AiSecretInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    api_key: str | None = None
+    clear: bool = False
+
+
+class AiPlaceTestInput(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
 
 class ExportInput(BaseModel):
     web_root: str = Field(min_length=1)
@@ -496,6 +523,83 @@ def google_maps_bootstrap(
         "apiKey": secrets.get("google-maps-browser-key"),
         "mapId": setting(conn, "google_maps_map_id", "DEMO_MAP_ID"),
     }
+
+
+def _ai_secret_state(secrets: SecretStore) -> dict:
+    value = secrets.get('deepseek-api-key')
+    return {'configured': bool(value), 'mask': _masked_secret(value)}
+
+
+@app.get('/api/ai-places/config')
+def get_ai_places_config(conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    draft = load_or_create_draft(conn)
+    active = next((version_dict(item) for item in list_versions(conn) if item.version == draft.active_version), None)
+    return {'draft': draft_dict(draft), 'active': active, 'secret': _ai_secret_state(secrets)}
+
+
+@app.patch('/api/ai-places/draft')
+def update_ai_places_draft(body: AiDraftInput, conn=Depends(db)):
+    try:
+        return draft_dict(save_draft(conn, body.model_dump(exclude_unset=True, exclude_none=True)))
+    except (AiConfigError, TypeError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.put('/api/ai-places/secrets/deepseek')
+def update_deepseek_secret(body: AiSecretInput, conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    if body.clear == (body.api_key is not None):
+        raise HTTPException(422, 'Choose a replacement key or clear the existing key')
+    if body.clear:
+        secrets.delete('deepseek-api-key')
+    else:
+        value = (body.api_key or '').strip()
+        if not value:
+            raise HTTPException(422, 'DeepSeek API key cannot be blank')
+        secrets.set('deepseek-api-key', value)
+    conn.execute("UPDATE ai_place_draft SET test_state='untested',tested_hash='',test_summary='' WHERE singleton_id=1")
+    conn.commit()
+    return _ai_secret_state(secrets)
+
+
+@app.post('/api/ai-places/test')
+def test_ai_places(body: AiPlaceTestInput, conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    draft = load_or_create_draft(conn)
+    key = secrets.get('deepseek-api-key')
+    if not key:
+        raise HTTPException(503, 'Configure the DeepSeek API key first')
+    started = time.monotonic()
+    try:
+        result = interpret_place(body.text, draft, key)
+    except PlaceInterpretationError as error:
+        raise HTTPException(503, {'code': error.code, 'message': str(error)}) from None
+    latency = round((time.monotonic() - started) * 1000)
+    summary = f'{result.status}: {result.normalized_query or result.clarification}'
+    try:
+        record_test(conn, draft.config_hash, summary)
+    except AiConfigConflict as error:
+        raise HTTPException(409, str(error)) from None
+    return {'interpretation': result.model_dump(), 'testedHash': draft.config_hash, 'modelLatencyMs': latency}
+
+
+@app.post('/api/ai-places/activate')
+def activate_ai_places(conn=Depends(db)):
+    try:
+        return version_dict(activate_draft(conn))
+    except AiConfigConflict as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@app.get('/api/ai-places/versions')
+def get_ai_places_versions(conn=Depends(db)):
+    return [version_dict(item) for item in list_versions(conn)]
+
+
+@app.post('/api/ai-places/versions/{version}/restore')
+def restore_ai_places_version(version: int, conn=Depends(db)):
+    try:
+        return draft_dict(restore_version(conn, version))
+    except AiConfigError as error:
+        raise HTTPException(404, str(error)) from None
 
 @app.get("/api/publish/preview")
 def publish_preview(conn=Depends(db)):
