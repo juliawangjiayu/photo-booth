@@ -1,4 +1,4 @@
-import type { Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
+import type { AiDraftInput, AiPlaceConfig, AiPlaceDraft, AiPlaceTestResult, AiPlaceVersion, Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, MaskedSecret, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, options);
@@ -7,7 +7,15 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
   if (!response.ok) {
     const obj = data && typeof data === 'object' ? (data as { detail?: unknown }) : null;
-    throw new Error(typeof obj?.detail === 'string' ? obj.detail : `Request failed (${response.status})`);
+    const structured = obj?.detail && typeof obj.detail === 'object'
+      ? (obj.detail as {message?: unknown})
+      : null;
+    const message = typeof obj?.detail === 'string'
+      ? obj.detail
+      : typeof structured?.message === 'string'
+        ? structured.message
+        : `Request failed (${response.status})`;
+    throw new Error(message);
   }
   return data as T;
 }
@@ -40,6 +48,13 @@ export const api = {
   googleMapsConfig: () => request<GoogleMapsConfig>('/api/maps/config'),
   updateGoogleMapsConfig: (config: GoogleMapsConfigInput) => request<GoogleMapsConfig>('/api/maps/config', json('PUT', config)),
   googleMapsBootstrap: () => request<GoogleMapsBootstrap>('/api/maps/bootstrap'),
+  aiPlacesConfig: () => request<AiPlaceConfig>('/api/ai-places/config'),
+  updateAiPlacesDraft: (changes: AiDraftInput) => request<AiPlaceDraft>('/api/ai-places/draft', json('PATCH', changes)),
+  updateDeepSeekSecret: (body: {api_key?: string; clear?: boolean}) => request<MaskedSecret>('/api/ai-places/secrets/deepseek', json('PUT', body)),
+  testAiPlace: (text: string) => request<AiPlaceTestResult>('/api/ai-places/test', json('POST', {text})),
+  activateAiPlaces: () => request<AiPlaceVersion>('/api/ai-places/activate', {method: 'POST'}),
+  aiPlaceVersions: () => request<AiPlaceVersion[]>('/api/ai-places/versions'),
+  restoreAiPlaceVersion: (version: number) => request<AiPlaceDraft>(`/api/ai-places/versions/${version}/restore`, {method: 'POST'}),
   publishPreview: () => request<PublishPreview>('/api/publish/preview'),
   export: (web_root: string) => request<{count:number; skipped:PublishPreview['issues'];webRoot:string}>('/api/publish/export', json('POST',{web_root})),
   github: (web_root: string, message: string) => request<{pushed:boolean;message?:string;branch?:string}>('/api/publish/github', json('POST',{web_root,message})),

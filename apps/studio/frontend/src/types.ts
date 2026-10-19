@@ -51,6 +51,66 @@ export type GoogleMapsConfigInput = {
   clear_api_key?: boolean;
   map_id: string;
 };
+export type MaskedSecret = {
+  configured: boolean;
+  mask: string;
+};
+export type AiPlaceTestState = 'untested' | 'passed';
+export type AiPlaceDraft = {
+  provider: string;
+  base_url: string;
+  model: string;
+  timeout_seconds: number;
+  retry_count: number;
+  prompt_text: string;
+  config_hash: string;
+  test_state: AiPlaceTestState;
+  tested_hash: string | null;
+  test_summary: string | null;
+  active_version: number | null;
+  created_at: string;
+  updated_at: string;
+};
+export type AiPlaceVersion = {
+  version: number;
+  provider: string;
+  base_url: string;
+  model: string;
+  timeout_seconds: number;
+  retry_count: number;
+  prompt_text: string;
+  config_hash: string;
+  test_summary: string | null;
+  lifecycle_state: 'active' | 'superseded';
+  activated_at: string;
+  remote_published_at: string | null;
+  remote_publish_receipt: string | null;
+};
+export type AiPlaceConfig = {
+  draft: AiPlaceDraft;
+  active: AiPlaceVersion | null;
+  secret: MaskedSecret;
+};
+export type AiDraftInput = Partial<Pick<AiPlaceDraft,
+  'provider' | 'base_url' | 'model' | 'timeout_seconds' | 'retry_count' | 'prompt_text'
+>>;
+export type AiPlaceInterpretation = {
+  status: 'resolved' | 'insufficient';
+  normalized_query: string;
+  landmark: string;
+  locality: string;
+  region: string;
+  country: string;
+  category: string;
+  uncertainty: string;
+  confidence: number;
+  clarification: string;
+};
+export type AiPlaceTestResult = {
+  interpretation: AiPlaceInterpretation;
+  testedHash: string;
+  modelLatencyMs: number;
+};
 export type Place = {
   id?: string;
   name: string;
