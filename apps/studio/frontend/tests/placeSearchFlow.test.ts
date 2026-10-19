@@ -9,8 +9,8 @@ const directPlace: Place = {
 };
 const rewrittenPlace: Place = {...directPlace, id: 'rewritten', name: 'Yushan Scenic Area'};
 const resolved: AiPlaceInterpretation = {
-  status: 'resolved', normalized_query: 'Yushan Scenic Area, Fuzhou, Fujian', landmark: 'Yushan Scenic Area',
-  locality: 'Fuzhou', region: 'Fujian', country: 'China', category: 'tourist attraction', uncertainty: '',
+  status: 'searchable', normalized_query: 'Yushan Scenic Area, Fuzhou, Fujian', landmark: 'Yushan Scenic Area',
+  locality: 'Fuzhou', region: 'Fujian', country: 'China', category: 'tourist attraction', uncertainty: [],
   confidence: 0.9, clarification: '',
 };
 

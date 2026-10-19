@@ -95,14 +95,14 @@ export type AiDraftInput = Partial<Pick<AiPlaceDraft,
   'provider' | 'base_url' | 'model' | 'timeout_seconds' | 'retry_count' | 'prompt_text'
 >>;
 export type AiPlaceInterpretation = {
-  status: 'resolved' | 'insufficient';
+  status: 'searchable' | 'insufficient';
   normalized_query: string;
   landmark: string;
   locality: string;
   region: string;
   country: string;
   category: string;
-  uncertainty: string;
+  uncertainty: string[];
   confidence: number;
   clarification: string;
 };

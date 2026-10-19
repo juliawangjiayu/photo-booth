@@ -38,14 +38,14 @@ test('editing a tested draft immediately clears its successful-test state', () =
 test('a test result only unlocks the exact current configuration hash', () => {
   const matching = applyAiTestResult(draft, {
     interpretation: {
-      status: 'resolved',
+      status: 'searchable',
       normalized_query: 'Peak Tram, Hong Kong',
       landmark: 'Peak Tram',
       locality: 'Hong Kong',
       region: 'Hong Kong',
       country: 'Hong Kong',
       category: 'transit station',
-      uncertainty: '',
+      uncertainty: [],
       confidence: 0.92,
       clarification: '',
     },
