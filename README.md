@@ -10,6 +10,8 @@ A privacy-minded, local-first photo CMS for a future Next.js photography portfol
 - Single-column photo editor: optional description, date (month or full day), existing-or-create tags, a Homepage checkbox, and an inline Guess Where section. Photos do not use titles or separate Gallery location fields.
 - One managed camera/device per photo, detected from EXIF/TIFF Make and Model when possible, with manual choices for iPhone 6, iPhone 11, iPhone 14, Sony NEX-C3, Sony a6400 and Canon G3QL.
 - Guess Where place search and a world-map pin editor; EXIF GPS may seed a Pin but never confirms it automatically.
+- Google Places searches first; zero results trigger at most one DeepSeek rewrite and one Google retry. Existing candidates can be reinterpreted explicitly.
+- A local **AI & Places** console for masked Keychain secrets, editable prompt/model settings, live end-to-end tests, immutable active versions, and optional HTTPS publication to a future website backend.
 - Collections (a photo may belong to multiple), basic bulk collection/tag edits.
 - Independent Guess Where pool with confirmed coordinates, precision and difficulty; saved locally in SQLite.
 - Private Guess Where answer names/descriptions and a 1/10/50/100 km radius (10 km by default), plus a local map-pin grading preview.
@@ -18,7 +20,7 @@ A privacy-minded, local-first photo CMS for a future Next.js photography portfol
 - Needs Review contains only imported photos whose complete review has not yet been saved.
 - Local publish checklist for unfinished review and unconfirmed game pins.
 
-**Not yet included:** D1 remote answer synchronization, a real public Next.js Gallery, image editing, authentication, a full featured collection-order editing UI, a packaged `.app`, or cloud background sync. These require separate phases.
+**Not yet included:** the future website-side configuration receiver, D1 remote answer synchronization, a real public Next.js Gallery, image editing, authentication, a full featured collection-order editing UI, a packaged `.app`, or cloud background sync. These require separate phases in the separate personal-website repository.
 
 ## First-run setup (macOS)
 
@@ -59,19 +61,19 @@ API documentation (local only): http://127.0.0.1:8000/docs
 
 ## Location lookup and maps
 
-Photo Booth uses Google Maps JavaScript API for the Pin editor and answer-radius circle, and Places API (New) for place candidates. Add a browser key under Settings; Photo Booth stores the full value in macOS Keychain, while SQLite keeps only the non-secret Map ID. Restrict the key in Google Cloud to the required APIs and local HTTP referrers.
+Photo Booth uses Google Maps JavaScript API for the Pin editor and answer-radius circle, and Places API (New) for place candidates. Add a browser key under **AI & Places → Model & prompt**; Photo Booth stores the full value in macOS Keychain, while SQLite keeps only the non-secret Map ID. Restrict the key in Google Cloud to the required APIs and local HTTP referrers.
 
 Google Cloud setup:
 
 1. Create or choose a Google Cloud project with billing enabled. Google Maps Platform requires billing even when usage remains within available credits.
 2. Enable **Maps JavaScript API** and **Places API (New)** for that project.
 3. Create an API key with **Websites** application restrictions. Add `http://127.0.0.1:5173/*` and `http://localhost:5173/*` as allowed referrers.
-4. Restrict the key to only **Maps JavaScript API** and **Places API (New)**, then paste it into Photo Booth → Settings.
+4. Restrict the key to only **Maps JavaScript API** and **Places API (New)**, then paste it into Photo Booth → **AI & Places → Model & prompt**.
 5. Keep `DEMO_MAP_ID` while testing, or create a Map ID in Google Cloud and save it alongside the key. Advanced Markers require a Map ID.
 
 The future public website should use a separate browser key restricted to its production domains. Do not reuse an unrestricted local-development key in a deployed site, and never commit either key to Git.
 
-Guess Where search accepts Chinese, English, and mixed descriptions and returns at most five Google Places candidates. Choosing a candidate only positions the draft Pin: you must still inspect the map and explicitly confirm it. The Pin can always be entered as latitude/longitude even when maps or search are unavailable. These online services require Internet access.
+Guess Where search accepts Chinese, English, and mixed descriptions and returns at most five Google Places candidates. Google searches the original text first. If it returns zero candidates, Photo Booth may ask DeepSeek to produce one safer search query and retry Google exactly once. When direct candidates already exist, **Try another interpretation** is explicit rather than automatic. Choosing a candidate only positions the draft Pin: you must still inspect the map and explicitly confirm it. The Pin can always be entered as latitude/longitude even when maps, search, or DeepSeek are unavailable. These online services require Internet access.
 
 When GPS exists, the Guess Where map may open at that position. GPS is never used as a confirmed game answer without explicit approval in the map editor.
 The map displays the selected private answer radius as a shaded circle so the Pin and accepted area can be checked before saving.
@@ -94,7 +96,17 @@ This version does not migrate metadata from an older Photo Booth database. Start
 
 ## AI-assisted place search
 
-Map-pin grading works locally without an API key. DeepSeek is used only as a bounded fallback when Google Places cannot understand a location description; it never receives the private answer Pin, radius, or score. Configure Google Maps and DeepSeek from **AI & Places**. Full keys are stored in macOS Keychain rather than SQLite or environment files.
+Map-pin grading works locally without an API key. DeepSeek is used only as a bounded fallback when Google Places cannot understand a location description; it receives the typed search description and the configured prompt, but never the photo, private answer Pin, radius, canonical answer, or score.
+
+Configure it under **AI & Places**:
+
+1. In **Model & prompt**, keep the default DeepSeek endpoint/model or edit the non-secret fields, paste the DeepSeek API key, and save the draft. The key is stored in macOS Keychain and immediately cleared from the input.
+2. In **Test configuration**, try real examples. Photo Booth calls DeepSeek, displays the normalized Google query and uncertainty, then shows live Google Places candidates and separate latencies.
+3. Any draft or secret edit invalidates the previous test. Only the exact tested draft hash can be activated.
+4. **Activate as new version** creates immutable local history. Restoring an old version copies it into an untested editable draft; it never rewrites history.
+5. **Published versions** remains useful while disconnected. Local activation and photo editing do not require a future website endpoint.
+
+The editable prompt is wrapped in a code-enforced safety envelope. Malformed model output, timeouts, invalid keys, and vague descriptions are recoverable errors; manual Pin entry remains available. Full Google, DeepSeek, and publisher credentials are stored in macOS Keychain rather than SQLite, `.env`, or public exports.
 
 The backend listens only on `127.0.0.1`; do not expose it publicly. Photo exports are re-encoded into WebP without EXIF or GPS, and generated JSON excludes exact coordinates. Do not commit `.local/` to Git even in a private repository.
 
@@ -115,6 +127,14 @@ Photo Booth exports all reviewed photos with a valid month-or-day date and an ex
 If the website folder is an existing Git repository with an `origin` remote and you have Git credentials configured, you can then choose **Commit & push to GitHub**. The app refuses to publish if you already have staged changes, and stages only the managed output paths. **This triggers a real `git push`**, so review your repository's deployment settings first. GitHub authentication is provided by your own Git credentials, not stored inside Photo Booth.
 
 **Game answer sync is intentionally not implemented in v0.1.** Answers remain in your local SQLite database until a secure, authenticated API for Cloudflare D1 exists; this avoids leaking the quiz answers into a public Git repo or static JSON.
+
+### Optional AI configuration publication
+
+The **Published versions** tab can save a future website's HTTPS base endpoint and a publisher token. Until that separate website implements the receiver, leave it disconnected. The token stays in macOS Keychain; only the endpoint and non-secret receipt are stored in SQLite.
+
+Photo Booth publishes only the exact tested and locally active version. Ordinary releases contain the provider, endpoint, model, timeout, retry count, editable prompt, version and prompt hash. They contain no photos, Guess Where answers, coordinates, radii, scores, Google key, or publisher token. **Publish + replace production key** is a separate confirmed action that adds the current DeepSeek key to that one request; ordinary releases never resend it. Redirects are rejected, releases are idempotent, and the local version is marked remote only after a matching version/hash receipt. See [the publishing contract](docs/ai-place-publishing-contract.md).
+
+The personal website and its receiver belong in a separate repository. This repository is only the local Photo Booth application and the client-side contract.
 
 ## Tests
 
@@ -139,4 +159,4 @@ npm run build
 - Thumbnail generation supports JPEG/PNG/WebP/TIFF; HEIC depends on your Pillow's available codecs.
 - No automatic deletion of original photos: clearing a selection or removing a Collection will never delete original image files.
 - Some map services may be unavailable behind certain networks; Guess Where answer names remain editable and map coordinates can be entered manually.
-- Guess Where answers are intentionally stored locally, and remote publication awaits authenticated sync support.
+- Guess Where answers are intentionally stored locally. The AI configuration publisher does not synchronize answers; authenticated answer sync remains a separate future feature.

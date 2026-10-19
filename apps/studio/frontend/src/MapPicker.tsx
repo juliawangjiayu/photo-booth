@@ -46,7 +46,7 @@ export default function MapPicker({initial, radiusKm, onClose, onConfigure, onCo
         const config = await api.googleMapsBootstrap();
         if (!config.apiKey.trim()) {
           setNeedsConfiguration(true);
-          throw new Error('Add a restricted Google Maps browser key in Settings to load the map.');
+          throw new Error('Add a restricted Google Maps browser key in AI & Places to load the map.');
         }
         const {maps, marker} = await loadGoogleMaps(config);
         if (disposed || !mapEl.current) return;
@@ -125,7 +125,7 @@ export default function MapPicker({initial, radiusKm, onClose, onConfigure, onCo
     <section className="map-modal" role="dialog" aria-modal="true" aria-label="Confirm game answer location">
       <div className="modal-head"><div><p className="eyebrow">GUESS WHERE / ANSWER PIN</p><h2>Confirm the photo location</h2><span>Click or drag the Pin. The shaded circle is the {radiusKm} km correct-answer area.</span></div><button className="icon-btn" onClick={onClose} aria-label="Close map"><X size={19}/></button></div>
       <div ref={mapEl} className="map-canvas" />
-      {error && <div className="map-warning"><span>{error}</span>{needsConfiguration && <button className="inline-action" onClick={onConfigure}><Settings2 size={13}/> Open map settings</button>}</div>}
+      {error && <div className="map-warning"><span>{error}</span>{needsConfiguration && <button className="inline-action" onClick={onConfigure}><Settings2 size={13}/> Open AI & Places settings</button>}</div>}
       <div className="map-bottom"><div className="map-coords"><label>Latitude<input aria-label="Latitude" type="number" step="any" value={coords.latitude} onChange={event => edit('latitude', event.target.value)}/></label><label>Longitude<input aria-label="Longitude" type="number" step="any" value={coords.longitude} onChange={event => edit('longitude', event.target.value)}/></label></div><button className="primary-btn" disabled={!valid} onClick={() => onConfirm(coords)}><Check size={16}/> Confirm pin</button></div>
       <div className="footnote"><MapPin size={13}/> The answer is stored locally, not exported to your public Gallery. <Crosshair size={13}/> Google Maps; provider attribution appears on the map.</div>
     </section>

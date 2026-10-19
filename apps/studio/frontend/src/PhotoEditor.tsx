@@ -233,7 +233,7 @@ export default function PhotoEditor({
     onClose();
   };
   const configureMaps = () => {
-    if (dirty && !window.confirm('Discard unsaved changes and open map settings?')) return;
+    if (dirty && !window.confirm('Discard unsaved changes and open AI & Places settings?')) return;
     setMapOpen(false);
     onClose();
     onConfigureMaps();

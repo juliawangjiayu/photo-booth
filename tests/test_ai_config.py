@@ -87,7 +87,7 @@ def test_restore_creates_a_new_draft_without_mutating_history(repository):
 def test_ai_config_tables_never_store_secret_values(repository):
     config, conn = repository
     config.load_or_create_draft(conn)
-    secret = "sk-never-store-this-value"
+    secret = "test-secret-never-store"
     with pytest.raises(ValueError):
         config.save_draft(conn, {"api_key": secret})
     table_names = ("ai_place_draft", "ai_place_versions")

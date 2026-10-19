@@ -86,7 +86,7 @@ def complete_review(client, photo_id, **overrides):
 
 
 def test_google_map_config_masks_key_and_bootstrap_returns_it_only_for_local_ui(client, secret_store):
-    api_key = "AIza-test-google-browser-key-1234567890"
+    api_key = "test-google-browser-key-1234567890"
     response = client.put(
         "/api/maps/config",
         json={"api_key": api_key, "map_id": "photo-booth-local"},
@@ -127,8 +127,8 @@ def test_google_map_config_masks_key_and_bootstrap_returns_it_only_for_local_ui(
 
 
 def test_google_map_key_can_be_replaced_and_cleared_without_entering_sqlite(client, secret_store):
-    first = "AIza-first-google-browser-key-123456"
-    second = "AIza-second-google-browser-key-654321"
+    first = "test-first-google-browser-key-123456"
+    second = "test-second-google-browser-key-654321"
     assert client.put("/api/maps/config", json={"api_key": first, "map_id": "map-one"}).status_code == 200
     replaced = client.put("/api/maps/config", json={"api_key": second, "map_id": "map-two"})
     assert replaced.status_code == 200, replaced.text
@@ -158,7 +158,7 @@ def test_google_map_key_can_be_replaced_and_cleared_without_entering_sqlite(clie
 def test_google_map_config_rejects_non_local_mutation_origin(client, secret_store):
     response = client.put(
         "/api/maps/config",
-        json={"api_key": "AIza-blocked-key-123456789", "map_id": "blocked"},
+        json={"api_key": "test-blocked-key-123456789", "map_id": "blocked"},
         headers={"Origin": "https://example.com"},
     )
     assert response.status_code == 403
@@ -257,7 +257,7 @@ def test_ai_publish_sends_active_release_and_records_only_matching_receipt(clien
     finally:
         conn.close()
     secret_store.set('ai-place-publisher-token', 'publisher-private')
-    secret_store.set('deepseek-api-key', 'sk-production-rotation')
+    secret_store.set('deepseek-api-key', 'test-production-rotation')
     assert client.put('/api/ai-places/remote', json={'endpoint': 'https://photos.example/config'}).status_code == 200
 
     captured = []
@@ -274,8 +274,8 @@ def test_ai_publish_sends_active_release_and_records_only_matching_receipt(clien
 
     rotated = client.post('/api/ai-places/publish', json={'include_deepseek_key': True})
     assert rotated.status_code == 200, rotated.text
-    assert captured[1][2]['deepSeekApiKey'] == 'sk-production-rotation'
-    assert 'sk-production-rotation' not in json.dumps(rotated.json())
+    assert captured[1][2]['deepSeekApiKey'] == 'test-production-rotation'
+    assert 'test-production-rotation' not in json.dumps(rotated.json())
 
     remote = client.get('/api/ai-places/config').json()['remote']
     assert remote['lastPublishedVersion'] == active.version
