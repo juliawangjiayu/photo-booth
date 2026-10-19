@@ -80,6 +80,37 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_place_draft (
+  singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+  provider TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  model TEXT NOT NULL,
+  timeout_seconds INTEGER NOT NULL CHECK(timeout_seconds BETWEEN 1 AND 120),
+  retry_count INTEGER NOT NULL CHECK(retry_count BETWEEN 0 AND 5),
+  prompt_text TEXT NOT NULL,
+  config_hash TEXT NOT NULL,
+  test_state TEXT NOT NULL DEFAULT 'untested' CHECK(test_state IN ('untested','passed','failed')),
+  tested_hash TEXT NOT NULL DEFAULT '',
+  test_summary TEXT NOT NULL DEFAULT '',
+  active_version INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ai_place_versions (
+  version INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  model TEXT NOT NULL,
+  timeout_seconds INTEGER NOT NULL,
+  retry_count INTEGER NOT NULL,
+  prompt_text TEXT NOT NULL,
+  config_hash TEXT NOT NULL,
+  test_summary TEXT NOT NULL,
+  lifecycle_state TEXT NOT NULL DEFAULT 'active' CHECK(lifecycle_state IN ('active','superseded')),
+  activated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  remote_published_at TEXT,
+  remote_publish_receipt TEXT NOT NULL DEFAULT ''
+);
 CREATE INDEX IF NOT EXISTS idx_photo_status ON photos(status);
 CREATE INDEX IF NOT EXISTS idx_photo_created ON photos(created_at);
 """
