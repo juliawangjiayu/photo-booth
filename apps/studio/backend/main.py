@@ -603,6 +603,31 @@ def test_ai_places(body: AiPlaceTestInput, conn=Depends(db), secrets: SecretStor
     return {'interpretation': result.model_dump(), 'testedHash': draft.config_hash, 'modelLatencyMs': latency}
 
 
+@app.post('/api/ai-places/interpret')
+def interpret_active_ai_place(body: AiPlaceTestInput, conn=Depends(db), secrets: SecretStore = Depends(get_secret_store)):
+    draft = load_or_create_draft(conn)
+    if not draft.active_version:
+        raise HTTPException(409, 'Activate a tested AI place configuration first')
+    active = next((item for item in list_versions(conn) if item.version == draft.active_version), None)
+    if not active:
+        raise HTTPException(409, 'The locally active AI place configuration could not be found')
+    key = secrets.get('deepseek-api-key')
+    if not key:
+        raise HTTPException(503, 'Configure the DeepSeek API key first')
+    started = time.monotonic()
+    try:
+        result = interpret_place(body.text, active, key)
+    except PlaceInterpretationError as error:
+        raise HTTPException(503, {'code': error.code, 'message': str(error)}) from None
+    latency = round((time.monotonic() - started) * 1000)
+    return {
+        'interpretation': result.model_dump(),
+        'activeVersion': active.version,
+        'configHash': active.config_hash,
+        'modelLatencyMs': latency,
+    }
+
+
 @app.post('/api/ai-places/activate')
 def activate_ai_places(conn=Depends(db)):
     try:

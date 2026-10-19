@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -16,6 +17,19 @@ Never produce latitude, longitude, bounding boxes, place IDs, distances, scores,
 Never request or infer private answer data.
 The normalized query must be at most 300 characters.
 When status is insufficient, normalized_query must be empty and clarification must say what geographic context is missing."""
+
+COORDINATE_PATTERNS = (
+    re.compile(r'(?<![\d.])[+-]?\d{1,3}\.\d+\s*[,，]\s*[+-]?\d{1,3}\.\d+(?![\d.])'),
+    re.compile(r'(?i)(?<!\w)(?:lat(?:itude)?|lon(?:gitude)?|lng)\s*[:=]?\s*[+-]?\d{1,3}(?:\.\d+)?'),
+    re.compile(
+        r'(?i)(?<!\w)[+-]?\d{1,3}(?:\.\d+)?\s*°?\s*[NS]\s*[,，; ]+'
+        r'[+-]?\d{1,3}(?:\.\d+)?\s*°?\s*[EW](?!\w)'
+    ),
+)
+
+
+def _contains_coordinate_text(value: str) -> bool:
+    return any(pattern.search(value) for pattern in COORDINATE_PATTERNS)
 
 
 class PlaceInterpretationError(RuntimeError):
@@ -43,6 +57,12 @@ class PlaceInterpretation(BaseModel):
             raise ValueError('Searchable result requires a query')
         if self.status == 'insufficient' and (self.normalized_query or not self.clarification.strip()):
             raise ValueError('Insufficient result requires clarification and no query')
+        text_values = [
+            self.normalized_query, self.landmark, self.locality, self.region,
+            self.country, self.category, self.clarification, *self.uncertainty,
+        ]
+        if any(_contains_coordinate_text(value) for value in text_values):
+            raise ValueError('Location interpretation must not contain coordinates')
         return self
 
 

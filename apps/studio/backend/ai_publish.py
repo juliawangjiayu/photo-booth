@@ -138,7 +138,14 @@ def publish_release(
         raise AiPublishError("Remote endpoint redirect was rejected", "redirect")
     if not isinstance(receipt, dict):
         raise AiPublishError("Remote receipt was invalid", "invalid_receipt")
-    if receipt.get("version") != version or receipt.get("promptHash") != prompt_hash:
+    receipt_version = receipt.get("version")
+    receipt_hash = receipt.get("promptHash")
+    if (
+        type(receipt_version) is not int
+        or type(receipt_hash) is not str
+        or receipt_version != version
+        or receipt_hash != prompt_hash
+    ):
         raise AiPublishError("Remote receipt did not match the published version", "receipt_mismatch")
     receipt_id = receipt.get("receipt")
     if not isinstance(receipt_id, str) or not receipt_id.strip() or len(receipt_id) > 500:

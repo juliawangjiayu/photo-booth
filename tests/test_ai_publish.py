@@ -105,3 +105,17 @@ def test_mismatched_receipt_and_timeout_are_safe_and_never_echo_secrets(version)
         publish_release('https://photos.example', 'publisher-never-echo', release, requester=timeout)
     assert 'sk-never-echo' not in str(timed_out.value)
     assert 'publisher-never-echo' not in str(timed_out.value)
+
+
+def test_boolean_version_cannot_masquerade_as_integer_one(version):
+    release = build_release(version)
+    release['version'] = 1
+    with pytest.raises(AiPublishError, match='receipt'):
+        publish_release(
+            'https://photos.example', 'publisher-token', release,
+            requester=lambda *args: ({
+                'version': True,
+                'promptHash': release['promptHash'],
+                'receipt': 'boolean-is-not-version-one',
+            }, args[0]),
+        )

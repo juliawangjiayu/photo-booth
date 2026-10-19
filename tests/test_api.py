@@ -211,6 +211,44 @@ def test_ai_places_draft_test_activate_and_restore(client, secret_store, monkeyp
     assert client.get('/api/ai-places/versions').json() == history
 
 
+def test_runtime_place_interpretation_uses_active_version_without_mutating_draft(client, secret_store, monkeypatch):
+    from backend import main
+    from backend.ai_places import PlaceInterpretation
+
+    secret_store.set('deepseek-api-key', 'sk-private')
+    output = PlaceInterpretation.model_validate({
+        'status': 'searchable', 'normalized_query': '台中市 美术馆 台湾',
+        'landmark': '美术馆', 'locality': '台中市', 'region': '', 'country': '台湾',
+        'category': '美术馆', 'uncertainty': [], 'confidence': 0.91,
+        'clarification': '',
+    })
+    seen_models = []
+
+    def fake_interpret(text, config, key):
+        seen_models.append(config.model)
+        return output
+
+    monkeypatch.setattr(main, 'interpret_place', fake_interpret)
+    assert client.post('/api/ai-places/interpret', json={'text': '台中市 美术馆'}).status_code == 409
+    assert client.post('/api/ai-places/test', json={'text': '台中市 美术馆'}).status_code == 200
+    activated = client.post('/api/ai-places/activate')
+    assert activated.status_code == 200, activated.text
+    active_hash = activated.json()['config_hash']
+
+    changed = client.patch('/api/ai-places/draft', json={'model': 'deepseek-v4-pro'})
+    assert changed.status_code == 200
+    before = client.get('/api/ai-places/config').json()['draft']
+    assert before['test_state'] == 'untested'
+
+    runtime = client.post('/api/ai-places/interpret', json={'text': '台中市 美术馆'})
+    assert runtime.status_code == 200, runtime.text
+    assert runtime.json()['activeVersion'] == 1
+    assert runtime.json()['configHash'] == active_hash
+    assert runtime.json()['interpretation']['normalized_query'] == '台中市 美术馆 台湾'
+    assert seen_models[-1] == 'deepseek-flash'
+    assert client.get('/api/ai-places/config').json()['draft'] == before
+
+
 def test_ai_places_missing_key_and_bad_origin(client):
     assert client.post('/api/ai-places/test', json={'text': '海边'}).status_code == 503
     assert client.patch('/api/ai-places/draft', json={'model': 'other'}, headers={'Origin':'https://example.com'}).status_code == 403

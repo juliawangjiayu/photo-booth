@@ -132,7 +132,7 @@ export default function PhotoEditor({
       const outcome = await searchWithFallback(
         normalizedQuery,
         searchGooglePlaces,
-        async rawText => (await api.testAiPlace(rawText)).interpretation,
+        async rawText => (await api.interpretAiPlace(rawText)).interpretation,
         mode,
       );
       setSearchOutcome(outcome);

@@ -1,4 +1,4 @@
-import type { AiDraftInput, AiPlaceConfig, AiPlaceDraft, AiPlaceTestResult, AiPlaceVersion, AiPublishReceipt, AiRemoteState, Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, MaskedSecret, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
+import type { AiDraftInput, AiPlaceConfig, AiPlaceDraft, AiPlaceRuntimeResult, AiPlaceTestResult, AiPlaceVersion, AiPublishReceipt, AiRemoteState, Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, MaskedSecret, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, options);
@@ -51,6 +51,7 @@ export const api = {
   updateAiPlacesDraft: (changes: AiDraftInput) => request<AiPlaceDraft>('/api/ai-places/draft', json('PATCH', changes)),
   updateDeepSeekSecret: (body: {api_key?: string; clear?: boolean}) => request<MaskedSecret>('/api/ai-places/secrets/deepseek', json('PUT', body)),
   testAiPlace: (text: string) => request<AiPlaceTestResult>('/api/ai-places/test', json('POST', {text})),
+  interpretAiPlace: (text: string) => request<AiPlaceRuntimeResult>('/api/ai-places/interpret', json('POST', {text})),
   activateAiPlaces: () => request<AiPlaceVersion>('/api/ai-places/activate', {method: 'POST'}),
   aiPlaceVersions: () => request<AiPlaceVersion[]>('/api/ai-places/versions'),
   restoreAiPlaceVersion: (version: number) => request<AiPlaceDraft>(`/api/ai-places/versions/${version}/restore`, {method: 'POST'}),

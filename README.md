@@ -101,7 +101,7 @@ Map-pin grading works locally without an API key. DeepSeek is used only as a bou
 Configure it under **AI & Places**:
 
 1. In **Model & prompt**, keep the default DeepSeek endpoint/model or edit the non-secret fields, paste the DeepSeek API key, and save the draft. The key is stored in macOS Keychain and immediately cleared from the input.
-2. In **Test configuration**, try real examples. Photo Booth calls DeepSeek, displays the normalized Google query and uncertainty, then shows live Google Places candidates and separate latencies.
+2. In **Test configuration**, try real examples. Photo Booth calls DeepSeek with the draft, displays the normalized Google query and uncertainty, then shows live Google Places candidates and separate latencies. Ordinary photo editing uses only the locally active version and never marks a draft as tested.
 3. Any draft or secret edit invalidates the previous test. Only the exact tested draft hash can be activated.
 4. **Activate as new version** creates immutable local history. Restoring an old version copies it into an untested editable draft; it never rewrites history.
 5. **Published versions** remains useful while disconnected. Local activation and photo editing do not require a future website endpoint.

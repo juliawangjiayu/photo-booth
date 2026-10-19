@@ -248,7 +248,7 @@ git commit -m "feat: add ai and places administration"
 - Modify: `tests/test_api.py`
 
 **Interfaces:**
-- Consumes: direct `searchGooglePlaces` and `POST /api/ai-places/test` using the locally active configuration.
+- Consumes: direct `searchGooglePlaces` and `POST /api/ai-places/interpret` using the locally active configuration.
 - Produces: `searchWithFallback(rawQuery, searchPlaces, reinterpret, mode) -> PlaceSearchOutcome` with `mode: "automatic" | "forced"`.
 
 - [ ] **Step 1: Write failing flow tests**

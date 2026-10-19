@@ -126,6 +126,12 @@ export type AiPlaceTestResult = {
   testedHash: string;
   modelLatencyMs: number;
 };
+export type AiPlaceRuntimeResult = {
+  interpretation: AiPlaceInterpretation;
+  activeVersion: number;
+  configHash: string;
+  modelLatencyMs: number;
+};
 export type Place = {
   id?: string;
   name: string;

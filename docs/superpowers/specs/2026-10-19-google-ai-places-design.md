@@ -152,6 +152,7 @@ On macOS the production implementation uses Keychain. Tests replace it with an i
 - `PATCH /api/ai-places/draft` — save non-secret draft fields and invalidate its prior test.
 - `PUT /api/ai-places/secrets/deepseek` — replace or clear the local API key.
 - `POST /api/ai-places/test` — interpret one description using the current draft.
+- `POST /api/ai-places/interpret` — interpret one description using only the locally active version without changing draft test state.
 - `POST /api/ai-places/activate` — activate the tested draft locally.
 - `GET /api/ai-places/versions` — immutable history.
 - `POST /api/ai-places/versions/{version}/restore` — copy a version into a new draft.
