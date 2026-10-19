@@ -20,14 +20,23 @@ if str(STUDIO_PARENT) not in sys.path:
     sys.path.insert(0, str(STUDIO_PARENT))
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
+def secret_store():
+    from backend.secret_store import MemorySecretStore
+
+    return MemorySecretStore()
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch, secret_store):
     monkeypatch.setenv("PHOTO_BOOTH_DATA_DIR", str(tmp_path / "data"))
     for mod in list(sys.modules):
         if mod.startswith("backend"):
             del sys.modules[mod]
-    from backend.main import app
+    from backend.main import app, get_secret_store
+    app.dependency_overrides[get_secret_store] = lambda: secret_store
     with TestClient(app) as test:
         yield test
+    app.dependency_overrides.clear()
 
 def photo_bytes(color=(107,136,127)):
     pic=Image.new("RGB",(640,450),color)
@@ -75,6 +84,86 @@ def complete_review(client, photo_id, **overrides):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_google_map_config_masks_key_and_bootstrap_returns_it_only_for_local_ui(client, secret_store):
+    api_key = "AIza-test-google-browser-key-1234567890"
+    response = client.put(
+        "/api/maps/config",
+        json={"api_key": api_key, "map_id": "photo-booth-local"},
+        headers={"Origin": "http://localhost:5173"},
+    )
+    assert response.status_code == 200, response.text
+    config = response.json()
+    assert config["apiKeyConfigured"] is True
+    assert config["apiKeyMask"].startswith(api_key[:4])
+    assert config["apiKeyMask"].endswith(api_key[-4:])
+    assert api_key not in json.dumps(config)
+    assert config["mapId"] == "photo-booth-local"
+
+    masked = client.get("/api/maps/config").json()
+    assert api_key not in json.dumps(masked)
+    bootstrap = client.get(
+        "/api/maps/bootstrap",
+        headers={"Origin": "http://127.0.0.1:5173"},
+    )
+    assert bootstrap.status_code == 200, bootstrap.text
+    assert bootstrap.json() == {"apiKey": api_key, "mapId": "photo-booth-local"}
+
+    blocked = client.get(
+        "/api/maps/bootstrap",
+        headers={"Origin": "https://example.com"},
+    )
+    assert blocked.status_code == 403
+
+    from backend.db import connect
+    conn = connect()
+    try:
+        stored = {row["key"]: row["value"] for row in conn.execute("SELECT key,value FROM settings")}
+    finally:
+        conn.close()
+    assert stored["google_maps_map_id"] == "photo-booth-local"
+    assert api_key not in json.dumps(stored)
+    assert secret_store.get("google-maps-browser-key") == api_key
+
+
+def test_google_map_key_can_be_replaced_and_cleared_without_entering_sqlite(client, secret_store):
+    first = "AIza-first-google-browser-key-123456"
+    second = "AIza-second-google-browser-key-654321"
+    assert client.put("/api/maps/config", json={"api_key": first, "map_id": "map-one"}).status_code == 200
+    replaced = client.put("/api/maps/config", json={"api_key": second, "map_id": "map-two"})
+    assert replaced.status_code == 200, replaced.text
+    assert secret_store.get("google-maps-browser-key") == second
+    assert first not in json.dumps(replaced.json())
+    assert second not in json.dumps(replaced.json())
+
+    cleared = client.put(
+        "/api/maps/config",
+        json={"clear_api_key": True, "map_id": "map-two"},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["apiKeyConfigured"] is False
+    assert cleared.json()["apiKeyMask"] == ""
+    assert secret_store.get("google-maps-browser-key") == ""
+
+    from backend.db import connect
+    conn = connect()
+    try:
+        serialized = json.dumps([dict(row) for row in conn.execute("SELECT * FROM settings")])
+    finally:
+        conn.close()
+    assert first not in serialized
+    assert second not in serialized
+
+
+def test_google_map_config_rejects_non_local_mutation_origin(client, secret_store):
+    response = client.put(
+        "/api/maps/config",
+        json={"api_key": "AIza-blocked-key-123456789", "map_id": "blocked"},
+        headers={"Origin": "https://example.com"},
+    )
+    assert response.status_code == 403
+    assert secret_store.get("google-maps-browser-key") == ""
 
 
 def test_import_requires_an_existing_collection_before_processing(client):

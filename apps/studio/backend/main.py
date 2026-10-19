@@ -7,16 +7,24 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, File, Form, UploadFile, Depends
+from fastapi import FastAPI, HTTPException, File, Form, UploadFile, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 
-from .db import DATA_DIR, ORIGINALS, THUMBS, PREVIEWS, connect, setting
+from .db import DATA_DIR, ORIGINALS, THUMBS, PREVIEWS, connect, setting, set_setting
 from .images import process_upload
 from .publish import collect, export_site, publish_git
 from .grading import grade_pin, grade_text
 from .review import ReviewValidationError, apply_review, validate_review_date
+from .secret_store import SecretStore, get_secret_store
+
+LOCAL_UI_ORIGINS = {
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,8 +40,7 @@ async def local_request_guard(request, call_next):
     # Browser pages from unrelated origins must not mutate private local data.
     from fastapi.responses import JSONResponse
     origin = request.headers.get("origin", "")
-    allowed = {"http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8000", "http://localhost:8000"}
-    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and origin and origin not in allowed:
+    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and origin and origin not in LOCAL_UI_ORIGINS:
         return JSONResponse({"detail": "Cross-origin mutation denied"}, status_code=403)
     return await call_next(request)
 
@@ -127,6 +134,13 @@ class TextGradeInput(BaseModel):
 class SettingInput(BaseModel):
     web_root: str | None = None
     maptiler_key: str | None = None
+
+
+class GoogleMapsConfigInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    api_key: str | None = Field(default=None, max_length=500)
+    clear_api_key: bool = False
+    map_id: str = Field(default="DEMO_MAP_ID", max_length=200)
 
 class ExportInput(BaseModel):
     web_root: str = Field(min_length=1)
@@ -423,6 +437,66 @@ def update_settings(body: SettingInput, conn=Depends(db)):
             conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key,value.strip()))
     conn.commit()
     return get_settings(conn)
+
+
+def _masked_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "•" * len(value)
+    return f"{value[:4]}…{value[-4:]}"
+
+
+def _google_maps_config(conn, secrets: SecretStore) -> dict:
+    api_key = secrets.get("google-maps-browser-key")
+    return {
+        "apiKeyConfigured": bool(api_key),
+        "apiKeyMask": _masked_secret(api_key),
+        "mapId": setting(conn, "google_maps_map_id", "DEMO_MAP_ID"),
+    }
+
+
+@app.get("/api/maps/config")
+def get_google_maps_config(
+    conn=Depends(db),
+    secrets: SecretStore = Depends(get_secret_store),
+):
+    return _google_maps_config(conn, secrets)
+
+
+@app.put("/api/maps/config")
+def update_google_maps_config(
+    body: GoogleMapsConfigInput,
+    conn=Depends(db),
+    secrets: SecretStore = Depends(get_secret_store),
+):
+    if body.clear_api_key and body.api_key is not None:
+        raise HTTPException(422, "Choose either a replacement key or clear the existing key")
+    if body.clear_api_key:
+        secrets.delete("google-maps-browser-key")
+    elif body.api_key is not None:
+        api_key = body.api_key.strip()
+        if not api_key:
+            raise HTTPException(422, "Google Maps API key cannot be blank")
+        secrets.set("google-maps-browser-key", api_key)
+    set_setting(conn, "google_maps_map_id", body.map_id.strip() or "DEMO_MAP_ID")
+    conn.commit()
+    return _google_maps_config(conn, secrets)
+
+
+@app.get("/api/maps/bootstrap")
+def google_maps_bootstrap(
+    request: Request,
+    conn=Depends(db),
+    secrets: SecretStore = Depends(get_secret_store),
+):
+    origin = request.headers.get("origin", "")
+    if origin and origin not in LOCAL_UI_ORIGINS:
+        raise HTTPException(403, "Local frontend only")
+    return {
+        "apiKey": secrets.get("google-maps-browser-key"),
+        "mapId": setting(conn, "google_maps_map_id", "DEMO_MAP_ID"),
+    }
 
 @app.get("/api/publish/preview")
 def publish_preview(conn=Depends(db)):
