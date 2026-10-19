@@ -6,36 +6,13 @@ export function normalizeAnswerRadius(value: number): AnswerRadius {
   return ANSWER_RADIUS_OPTIONS.includes(value as AnswerRadius) ? value as AnswerRadius : 10;
 }
 
-export function answerCirclePolygon(
-  center: {latitude: number; longitude: number},
-  radiusKm: number,
-  segments = 64,
-) {
-  const earthRadiusKm = 6371.0088;
-  const angularDistance = radiusKm / earthRadiusKm;
-  const latitude = center.latitude * Math.PI / 180;
-  const longitude = center.longitude * Math.PI / 180;
-  const coordinates: number[][] = [];
-  for (let index = 0; index <= segments; index += 1) {
-    const bearing = index / segments * Math.PI * 2;
-    const targetLatitude = Math.asin(
-      Math.sin(latitude) * Math.cos(angularDistance)
-      + Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing),
-    );
-    const targetLongitude = longitude + Math.atan2(
-      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude),
-      Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(targetLatitude),
-    );
-    coordinates.push([
-      ((targetLongitude * 180 / Math.PI + 540) % 360) - 180,
-      targetLatitude * 180 / Math.PI,
-    ]);
-  }
-  return {
-    type: 'Feature' as const,
-    properties: {},
-    geometry: {type: 'Polygon' as const, coordinates: [coordinates]},
-  };
+export function validCoordinates(latitude: number, longitude: number): boolean {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && latitude >= -90
+    && latitude <= 90
+    && longitude >= -180
+    && longitude <= 180;
 }
 
 export type ReviewDraft = {

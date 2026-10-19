@@ -133,7 +133,6 @@ class TextGradeInput(BaseModel):
 
 class SettingInput(BaseModel):
     web_root: str | None = None
-    maptiler_key: str | None = None
 
 
 class GoogleMapsConfigInput(BaseModel):
@@ -428,7 +427,7 @@ def grade_text_preview(photo_id: str, body: TextGradeInput, conn=Depends(db)):
 
 @app.get("/api/settings")
 def get_settings(conn=Depends(db)):
-    return {"web_root": setting(conn,"web_root"), "maptiler_key": setting(conn,"maptiler_key")}
+    return {"web_root": setting(conn,"web_root")}
 
 @app.patch("/api/settings")
 def update_settings(body: SettingInput, conn=Depends(db)):
@@ -517,23 +516,3 @@ def push_to_github(body: GitInput):
         return publish_git(body.web_root,body.message)
     except (OSError, ValueError) as exc:
         raise HTTPException(400, str(exc))
-
-@app.get("/api/geocode")
-def geocode(q: str):
-    if len(q.strip()) < 3 or len(q) > 180:
-        raise HTTPException(422, "Enter a location of 3-180 characters")
-    from .geocode import forward
-    try:
-        return forward(q.strip())
-    except Exception as exc:
-        raise HTTPException(503, f"Location services unavailable: {type(exc).__name__}. You can still place the Pin manually on the map.")
-
-@app.get("/api/reverse")
-def reverse_geocode(latitude: float, longitude: float):
-    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-        raise HTTPException(422, "Invalid coordinates")
-    from .geocode import reverse
-    try:
-        return reverse(latitude, longitude)
-    except Exception as exc:
-        raise HTTPException(503, f"Location service unavailable: {type(exc).__name__}. You can still place the Pin manually on the map.")

@@ -1,4 +1,4 @@
-import type { Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, Photo, PhotoReviewInput, Place, PublishPreview, Settings, Stats } from './types';
+import type { Collection, GoogleMapsBootstrap, GoogleMapsConfig, GoogleMapsConfigInput, GradeResult, Guess, ImportResult, Photo, PhotoReviewInput, PublishPreview, Settings, Stats } from './types';
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, options);
@@ -35,8 +35,6 @@ export const api = {
   removeGuess: (id: string) => request(`/api/guess/${id}`, {method:'DELETE'}),
   gradePin: (id:string, latitude:number, longitude:number) => request<GradeResult>(`/api/guess/${id}/grade-pin`, json('POST',{latitude,longitude})),
   gradeText: (id:string, answer:string) => request<GradeResult>(`/api/guess/${id}/grade-text`, json('POST',{answer})),
-  searchPlace: (q: string) => request<Place[]>(`/api/geocode?q=${encodeURIComponent(q)}`),
-  reverse: (latitude: number, longitude: number) => request<Place>(`/api/reverse?latitude=${latitude}&longitude=${longitude}`),
   settings: () => request<Settings>('/api/settings'),
   updateSettings: (settings: Partial<Settings>) => request<Settings>('/api/settings', json('PATCH', settings)),
   googleMapsConfig: () => request<GoogleMapsConfig>('/api/maps/config'),

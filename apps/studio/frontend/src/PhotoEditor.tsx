@@ -1,10 +1,11 @@
 import {useEffect, useState} from 'react';
-import {Compass, LoaderCircle, MapPin, Save, Search, Sparkles, Trash2, X} from 'lucide-react';
+import {Compass, LoaderCircle, MapPin, Save, Search, Settings2, Sparkles, Trash2, X} from 'lucide-react';
 import {api} from './api';
+import {loadGoogleMaps, searchGooglePlaces} from './googleMaps';
 import MapPicker from './MapPicker';
 import TagPicker from './TagPicker';
 import {ANSWER_RADIUS_OPTIONS, completionLabel, normalizeAnswerRadius, reviewProblems} from './reviewWorkflow';
-import type {AnswerRadius, Collection, Difficulty, GradeResult, Photo, PhotoReviewInput, Place, Precision, Settings} from './types';
+import type {AnswerRadius, Collection, Difficulty, GradeResult, Photo, PhotoReviewInput, Place, Precision} from './types';
 
 type FormFields = Pick<Photo,
   'taken_at'|'description'|'device'|'featured'|'collectionIds'
@@ -33,13 +34,13 @@ type ReviewContext = {
 type Props = {
   photo: Photo;
   collections: Collection[];
-  settings: Settings;
   review?: ReviewContext;
   allTags: string[];
   onTagsChange: (tags: string[]) => void;
   onSaved: (photo: Photo) => void;
   onDeleted: (photoId: string) => void | Promise<void>;
   onClose: () => void;
+  onConfigureMaps: () => void;
   toast: (message: string, isError?: boolean) => void;
 };
 
@@ -65,13 +66,13 @@ const createDraft = (photo: Photo): EditorDraft => ({
 export default function PhotoEditor({
   photo,
   collections,
-  settings,
   review,
   allTags,
   onTagsChange,
   onSaved,
   onDeleted,
   onClose,
+  onConfigureMaps,
   toast,
 }: Props) {
   const [draft, setDraft] = useState<EditorDraft>(() => createDraft(photo));
@@ -83,6 +84,7 @@ export default function PhotoEditor({
   const [places, setPlaces] = useState<Place[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState('');
+  const [mapsNeedConfiguration, setMapsNeedConfiguration] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [previewText, setPreviewText] = useState('');
   const [previewLat, setPreviewLat] = useState('');
@@ -116,13 +118,21 @@ export default function PhotoEditor({
     setSearching(true);
     setPlaces([]);
     setSearchMessage('');
+    setMapsNeedConfiguration(false);
     try {
-      const results = await api.searchPlace(normalizedQuery);
+      const config = await api.googleMapsBootstrap();
+      if (!config.apiKey.trim()) {
+        setMapsNeedConfiguration(true);
+        setSearchMessage('Add a restricted Google Maps browser key before searching places. You can still enter coordinates manually.');
+        return;
+      }
+      await loadGoogleMaps(config);
+      const results = await searchGooglePlaces(normalizedQuery);
       setPlaces(results);
-      const hasBroaderMatches = results.some(place => place.match_quality === 'broader');
-      setSearchMessage(results.length ? (hasBroaderMatches ? `${results.length} broader candidate${results.length === 1 ? '' : 's'} found. The search terms were shortened, so check the Pin carefully on the map.` : `${results.length} candidate place${results.length === 1 ? '' : 's'} found. Select one, then confirm its Pin on the map.`) : 'No matching place found. Try a shorter name, another language, or place the Pin directly on the map.');
+      setSearchMessage(results.length ? `${results.length} candidate place${results.length === 1 ? '' : 's'} found. Select one, then confirm its Pin on the map.` : 'No matching place found. Try a shorter name, another language, or place the Pin directly on the map.');
     } catch (error) {
-      setSearchMessage('Place search is temporarily unavailable. You can still place the Pin directly on the map.');
+      setMapsNeedConfiguration(true);
+      setSearchMessage('Google Places is unavailable. Check the browser key and enabled APIs; manual coordinates still work.');
       toast(String(error), true);
     } finally {
       setSearching(false);
@@ -203,6 +213,12 @@ export default function PhotoEditor({
     if (dirty && !window.confirm('Discard unsaved changes?')) return;
     onClose();
   };
+  const configureMaps = () => {
+    if (dirty && !window.confirm('Discard unsaved changes and open map settings?')) return;
+    setMapOpen(false);
+    onClose();
+    onConfigureMaps();
+  };
   const remove = async () => {
     if (!window.confirm(
       'Remove this photo from Photo Booth? Its metadata, Collection links, tags, Guess Where answer, and local previews will be removed. The archived original photo will be kept.',
@@ -251,7 +267,7 @@ export default function PhotoEditor({
         {draft.gameEnabled && <><div className="coord-display"><div><span>ANSWER COORDINATES</span><strong>{draft.coords ? `${draft.coords.latitude.toFixed(5)}, ${draft.coords.longitude.toFixed(5)}` : 'Not set'}</strong></div><span className={`status-pill ${draft.confirmed ? 'positive' : 'warning'}`}>{draft.confirmed ? 'Confirmed' : 'Needs confirmation'}</span></div>
           <label className="field">Canonical place name <span className="required">*</span><input value={draft.answerName} onChange={event => editDraft('answerName', event.target.value)} placeholder="Tokyo / Chaoyang District"/></label>
           <label className="field">Place description <span className="optional">optional</span><textarea rows={3} value={draft.answerDescription} onChange={event => editDraft('answerDescription', event.target.value)} placeholder="Near Tokyo Bay, exact district uncertain"/></label>
-          <div className="field"><span>Find coordinates from a place description</span><small>Chinese, English, abbreviations and minor spelling differences are supported.</small><div className="search-row"><input value={query} placeholder="Search city, district or landmark" onChange={event => {setQuery(event.target.value); setPlaces([]); setSearchMessage('');}} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); void searchPlaces();}}}/><button className="subtle-btn" onClick={() => void searchPlaces()} disabled={searching || query.trim().length < 3} title="Search answer place">{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}<span>Search</span></button></div>{searchMessage && <small className="place-search-message" aria-live="polite">{searchMessage}</small>}{places.length > 0 && <div className="place-results">{places.map(place => <button key={`${place.latitude}:${place.longitude}`} onClick={() => choosePlace(place)}><MapPin size={14}/><span>{place.name}</span></button>)}</div>}</div>
+          <div className="field"><span>Find coordinates from a place description</span><small>Search Google Places in Chinese, English, or mixed wording. Results are never accepted until you confirm the Pin.</small><div className="search-row"><input value={query} placeholder="Search city, district or landmark" onChange={event => {setQuery(event.target.value); setPlaces([]); setSearchMessage(''); setMapsNeedConfiguration(false);}} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); void searchPlaces();}}}/><button className="subtle-btn" onClick={() => void searchPlaces()} disabled={searching || query.trim().length < 3} title="Search answer place">{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}<span>Search</span></button></div>{searchMessage && <small className="place-search-message" aria-live="polite">{searchMessage}</small>}{mapsNeedConfiguration && <button className="inline-action" onClick={configureMaps}><Settings2 size={13}/> Open Google Maps settings</button>}{places.length > 0 && <div className="place-results">{places.map(place => <button key={place.id || `${place.latitude}:${place.longitude}`} onClick={() => choosePlace(place)}><MapPin size={14}/><span><b>{place.name}</b>{place.formattedAddress && <small>{place.formattedAddress}</small>}</span></button>)}</div>}</div>
           <button className="outline-btn full" onClick={openMap}><MapPin size={16}/> {draft.confirmed ? 'Edit confirmed Pin' : 'Open map & confirm Pin'}</button>
           <label className="field">Position precision<select value={draft.precision} onChange={event => editDraft('precision', event.target.value as Precision)}><option value="exact">Exact GPS</option><option value="approximate">Approximate location</option></select></label>
           <label className="field">Accepted answer radius<select value={draft.answerRadius} onChange={event => editDraft('answerRadius', Number(event.target.value) as AnswerRadius)}>{ANSWER_RADIUS_OPTIONS.map(radius => <option value={radius} key={radius}>{radius} km</option>)}</select><small>The map shows this private area so you can check whether the Pin and tolerance match the photo.</small></label>
@@ -269,6 +285,6 @@ export default function PhotoEditor({
       </div>
       {review && <div className="review-buttons"><button className="outline-btn" onClick={() => void save('exit')} disabled={saving || removing}>{completionLabel('exit', review.index, review.total)}</button><button className="primary-btn" onClick={() => void save('next')} disabled={saving || removing}><Save size={15}/>{saving && <LoaderCircle className="spin" size={15}/>} {completionLabel('next', review.index, review.total)}</button></div>}
     </div>
-    {mapOpen && <MapPicker initial={draft.coords ?? (photo.exif_lat !== null && photo.exif_lng !== null ? {latitude: photo.exif_lat, longitude: photo.exif_lng} : null)} maptilerKey={settings.maptiler_key} radiusKm={draft.answerRadius} onClose={() => setMapOpen(false)} onConfirm={point => {setDraft(current => ({...current, coords: point, confirmed: true})); setMapOpen(false); toast('Answer Pin confirmed. Save this photo to persist it.');}}/>}
+    {mapOpen && <MapPicker initial={draft.coords ?? (photo.exif_lat !== null && photo.exif_lng !== null ? {latitude: photo.exif_lat, longitude: photo.exif_lng} : null)} radiusKm={draft.answerRadius} onClose={() => setMapOpen(false)} onConfigure={configureMaps} onConfirm={point => {setDraft(current => ({...current, coords: point, confirmed: true})); setMapOpen(false); toast('Answer Pin confirmed. Save this photo to persist it.');}}/>}
   </aside>;
 }

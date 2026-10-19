@@ -39,7 +39,7 @@ export type Photo = {
 };
 export type Collection = { id: string; title: string; description: string; count: number };
 export type Stats = { photos: number; ready: number; needReview: number; gamePool: number; collections: number };
-export type Settings = { web_root: string; maptiler_key: string };
+export type Settings = { web_root: string };
 export type GoogleMapsBootstrap = { apiKey: string; mapId: string };
 export type GoogleMapsConfig = {
   apiKeyConfigured: boolean;

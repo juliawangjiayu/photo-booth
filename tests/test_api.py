@@ -4,7 +4,6 @@ import io
 import hashlib
 import json
 import os
-import ssl
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -609,35 +608,6 @@ def test_sqlite_request_connection_can_move_between_fastapi_worker_threads(clien
         assert count == 0
     finally:
         conn.close()
-
-
-def test_geocode_https_request_uses_a_populated_trust_store(monkeypatch):
-    from backend import geocode
-
-    captured = {}
-
-    class Response:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def read(self):
-            return b'[]'
-
-    def fake_urlopen(request, *, timeout, context):
-        captured['context'] = context
-        return Response()
-
-    monkeypatch.setattr(geocode, 'urlopen', fake_urlopen)
-
-    assert geocode.request_json('https://example.invalid/search') == []
-    context = captured['context']
-    assert isinstance(context, ssl.SSLContext)
-    assert context.verify_mode == ssl.CERT_REQUIRED
-    assert context.check_hostname is True
-    assert context.cert_store_stats()['x509_ca'] > 0
 
 
 @pytest.mark.parametrize(('make','model','expected'), [

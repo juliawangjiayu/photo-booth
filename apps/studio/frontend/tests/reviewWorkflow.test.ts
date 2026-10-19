@@ -128,20 +128,16 @@ test('Guess Where radius is limited to the four supported choices', () => {
   assert.equal(normalize?.(40), 10);
 });
 
-test('answer radius creates a closed map polygon around the private pin', () => {
-  const circle = (workflow as typeof workflow & {
-    answerCirclePolygon?: (
-      center: {latitude: number; longitude: number}, radiusKm: number,
-    ) => {geometry: {type: string; coordinates: number[][][]}};
-  }).answerCirclePolygon;
-  assert.equal(typeof circle, 'function');
-  const polygon = circle?.({latitude: 0, longitude: 0}, 10);
-  assert.equal(polygon?.geometry.type, 'Polygon');
-  assert.equal(polygon?.geometry.coordinates[0].length, 65);
-  assert.deepEqual(
-    polygon?.geometry.coordinates[0][0],
-    polygon?.geometry.coordinates[0][64],
-  );
-  const firstPoint = polygon?.geometry.coordinates[0][0];
-  assert.ok(firstPoint && Math.abs(firstPoint[1] - 0.0899) < 0.001);
+test('map coordinates must be finite and inside latitude/longitude bounds', () => {
+  const valid = (workflow as typeof workflow & {
+    validCoordinates?: (latitude: number, longitude: number) => boolean;
+  }).validCoordinates;
+  assert.equal(typeof valid, 'function');
+  assert.equal(valid?.(22.2778, 114.1592), true);
+  assert.equal(valid?.(-90, -180), true);
+  assert.equal(valid?.(90, 180), true);
+  assert.equal(valid?.(90.0001, 0), false);
+  assert.equal(valid?.(0, 180.0001), false);
+  assert.equal(valid?.(Number.NaN, 0), false);
+  assert.equal(valid?.(0, Number.POSITIVE_INFINITY), false);
 });

@@ -59,9 +59,9 @@ API documentation (local only): http://127.0.0.1:8000/docs
 
 ## Location lookup and maps
 
-A map is available using [MapLibre GL JS](https://maplibre.org/) and the free public [OpenFreeMap](https://openfreemap.org/) tile style (with attribution). You may enter a MapTiler public browser key under Settings to switch map styles. These services require Internet; no Google Maps API is used.
+Photo Booth uses Google Maps JavaScript API for the Pin editor and answer-radius circle, and Places API (New) for place candidates. Add a browser key under Settings; Photo Booth stores the full value in macOS Keychain, while SQLite keeps only the non-secret Map ID. Restrict the key in Google Cloud to the required APIs and local HTTP referrers.
 
-The Guess Where **Search** button combines OpenStreetMap Nominatim with Photon. Nominatim supplies precise names and addresses while Photon adds multilingual, abbreviation and typo-tolerant candidates. Results are merged and deduplicated by the local backend; if one service is unavailable, the other can still answer. When a multi-part Chinese description has no exact result, Photo Booth performs one shortened fallback search and marks those results as broader candidates that require careful map confirmation. Searches remain user-initiated and low-volume, not automated batch geocoding. The Pin can always be placed directly on the map. Attribution: © OpenStreetMap contributors.
+Guess Where search accepts Chinese, English, and mixed descriptions and returns at most five Google Places candidates. Choosing a candidate only positions the draft Pin: you must still inspect the map and explicitly confirm it. The Pin can always be entered as latitude/longitude even when maps or search are unavailable. These online services require Internet access.
 
 When GPS exists, the Guess Where map may open at that position. GPS is never used as a confirmed game answer without explicit approval in the map editor.
 The map displays the selected private answer radius as a shaded circle so the Pin and accepted area can be checked before saving.
