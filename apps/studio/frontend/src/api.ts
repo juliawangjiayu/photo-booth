@@ -42,7 +42,6 @@ export const api = {
   setGuess: (id: string, body: Omit<Guess, 'photo_id'>) => request<Photo>(`/api/guess/${id}`, json('PUT', body)),
   removeGuess: (id: string) => request(`/api/guess/${id}`, {method:'DELETE'}),
   gradePin: (id:string, latitude:number, longitude:number) => request<GradeResult>(`/api/guess/${id}/grade-pin`, json('POST',{latitude,longitude})),
-  gradeText: (id:string, answer:string) => request<GradeResult>(`/api/guess/${id}/grade-text`, json('POST',{answer})),
   settings: () => request<Settings>('/api/settings'),
   updateSettings: (settings: Partial<Settings>) => request<Settings>('/api/settings', json('PATCH', settings)),
   googleMapsConfig: () => request<GoogleMapsConfig>('/api/maps/config'),

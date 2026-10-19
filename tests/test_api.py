@@ -763,26 +763,7 @@ def test_pin_grading_uses_the_same_radius_for_correct_close_and_incorrect():
     assert just_incorrect['score'] <= 1008
 
 
-def test_text_grading_validates_structured_model_output(monkeypatch):
-    from backend import grading
-    entry = {
-        'answer_name':'Tokyo', 'answer_description':'Around Tokyo Bay',
-        'latitude':35.6762, 'longitude':139.6503, 'answer_radius_km':50,
-    }
-    monkeypatch.setenv('PHOTO_BOOTH_LLM_API_KEY', 'test-key')
-    monkeypatch.setenv('PHOTO_BOOTH_LLM_MODEL', 'test-model')
-    valid_response = {'choices':[{'message':{'content':'{"result":"close","score":2300,"confidence":0.82,"explanation":"Same metro area."}'}}]}
-    result = grading.grade_text(entry, 'Yokohama', requester=lambda *_: valid_response)
-    assert result == {'result':'close', 'score':2300, 'confidence':0.82, 'explanation':'Same metro area.'}
-    invalid_score = {'choices':[{'message':{'content':'{"result":"close","score":5500,"confidence":0.82,"explanation":"Same metro area."}'}}]}
-    with pytest.raises(ValueError, match='invalid grading result'):
-        grading.grade_text(entry, 'Yokohama', requester=lambda *_: invalid_score)
-    malformed = {'choices':[{'message':{'content':'not json'}}]}
-    with pytest.raises(ValueError, match='valid JSON'):
-        grading.grade_text(entry, 'Yokohama', requester=lambda *_: malformed)
-
-
-def test_grading_preview_endpoints_and_missing_model_config(client, monkeypatch):
+def test_pin_grading_preview_remains_available_and_text_route_is_retired(client):
     photo_id = upload(client)
     complete_review(client, photo_id)
     saved = client.put(f'/api/guess/{photo_id}', json={
@@ -794,11 +775,10 @@ def test_grading_preview_endpoints_and_missing_model_config(client, monkeypatch)
     pin = client.post(f'/api/guess/{photo_id}/grade-pin', json={'latitude':35.7, 'longitude':139.7})
     assert pin.status_code == 200, pin.text
     assert pin.json()['result'] == 'correct'
-    monkeypatch.delenv('PHOTO_BOOTH_LLM_API_KEY', raising=False)
-    monkeypatch.delenv('PHOTO_BOOTH_LLM_MODEL', raising=False)
+    assert pin.json()['score'] == 5000
+    assert pin.json()['distance_km'] > 0
     text = client.post(f'/api/guess/{photo_id}/grade-text', json={'answer':'Tokyo'})
-    assert text.status_code == 503
-    assert 'PHOTO_BOOTH_LLM' in text.json()['detail']
+    assert text.status_code == 404
 
 
 def test_git_publish_from_nested_monorepo(client,tmp_path):

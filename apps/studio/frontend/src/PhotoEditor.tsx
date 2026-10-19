@@ -3,6 +3,7 @@ import {Compass, LoaderCircle, MapPin, Save, Search, Settings2, Sparkles, Trash2
 import {api} from './api';
 import {loadGoogleMaps, searchGooglePlaces} from './googleMaps';
 import MapPicker from './MapPicker';
+import {searchWithFallback, type PlaceSearchOutcome} from './placeSearchFlow';
 import TagPicker from './TagPicker';
 import {ANSWER_RADIUS_OPTIONS, completionLabel, normalizeAnswerRadius, reviewProblems} from './reviewWorkflow';
 import type {AnswerRadius, Collection, Difficulty, GradeResult, Photo, PhotoReviewInput, Place, Precision} from './types';
@@ -86,7 +87,7 @@ export default function PhotoEditor({
   const [searchMessage, setSearchMessage] = useState('');
   const [mapsNeedConfiguration, setMapsNeedConfiguration] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [previewText, setPreviewText] = useState('');
+  const [searchOutcome, setSearchOutcome] = useState<PlaceSearchOutcome | null>(null);
   const [previewLat, setPreviewLat] = useState('');
   const [previewLng, setPreviewLng] = useState('');
   const [gradeResult, setGradeResult] = useState<GradeResult|null>(null);
@@ -109,7 +110,7 @@ export default function PhotoEditor({
     setDraft(current => ({...current, [field]: value}));
   };
 
-  const searchPlaces = async () => {
+  const searchPlaces = async (mode: 'automatic' | 'forced' = 'automatic') => {
     const normalizedQuery = query.trim();
     if (normalizedQuery.length < 3) {
       setSearchMessage('Enter at least 3 characters.');
@@ -117,6 +118,7 @@ export default function PhotoEditor({
     }
     setSearching(true);
     setPlaces([]);
+    setSearchOutcome(null);
     setSearchMessage('');
     setMapsNeedConfiguration(false);
     try {
@@ -127,9 +129,26 @@ export default function PhotoEditor({
         return;
       }
       await loadGoogleMaps(config);
-      const results = await searchGooglePlaces(normalizedQuery);
-      setPlaces(results);
-      setSearchMessage(results.length ? `${results.length} candidate place${results.length === 1 ? '' : 's'} found. Select one, then confirm its Pin on the map.` : 'No matching place found. Try a shorter name, another language, or place the Pin directly on the map.');
+      const outcome = await searchWithFallback(
+        normalizedQuery,
+        searchGooglePlaces,
+        async rawText => (await api.testAiPlace(rawText)).interpretation,
+        mode,
+      );
+      setSearchOutcome(outcome);
+      setPlaces(outcome.places);
+      if (outcome.modelError) {
+        setMapsNeedConfiguration(true);
+        setSearchMessage(`Google found no direct match. AI interpretation is unavailable: ${outcome.modelError}. You can shorten the search or place the Pin manually.`);
+      } else if (outcome.source === 'insufficient') {
+        setSearchMessage(outcome.clarification);
+      } else if (outcome.source === 'interpreted') {
+        setSearchMessage(outcome.places.length
+          ? `${outcome.places.length} candidate place${outcome.places.length === 1 ? '' : 's'} found from the interpreted query. Check the explanation, then select and confirm a Pin.`
+          : `No Google Places candidates were found for “${outcome.queryUsed}”. Try adding a city or place the Pin manually.`);
+      } else {
+        setSearchMessage(`${outcome.places.length} candidate place${outcome.places.length === 1 ? '' : 's'} found. Select one, then confirm its Pin on the map.`);
+      }
     } catch (error) {
       setMapsNeedConfiguration(true);
       setSearchMessage('Google Places is unavailable. Check the browser key and enabled APIs; manual coordinates still work.');
@@ -267,12 +286,12 @@ export default function PhotoEditor({
         {draft.gameEnabled && <><div className="coord-display"><div><span>ANSWER COORDINATES</span><strong>{draft.coords ? `${draft.coords.latitude.toFixed(5)}, ${draft.coords.longitude.toFixed(5)}` : 'Not set'}</strong></div><span className={`status-pill ${draft.confirmed ? 'positive' : 'warning'}`}>{draft.confirmed ? 'Confirmed' : 'Needs confirmation'}</span></div>
           <label className="field">Canonical place name <span className="required">*</span><input value={draft.answerName} onChange={event => editDraft('answerName', event.target.value)} placeholder="Tokyo / Chaoyang District"/></label>
           <label className="field">Place description <span className="optional">optional</span><textarea rows={3} value={draft.answerDescription} onChange={event => editDraft('answerDescription', event.target.value)} placeholder="Near Tokyo Bay, exact district uncertain"/></label>
-          <div className="field"><span>Find coordinates from a place description</span><small>Search Google Places in Chinese, English, or mixed wording. Results are never accepted until you confirm the Pin.</small><div className="search-row"><input value={query} placeholder="Search city, district or landmark" onChange={event => {setQuery(event.target.value); setPlaces([]); setSearchMessage(''); setMapsNeedConfiguration(false);}} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); void searchPlaces();}}}/><button className="subtle-btn" onClick={() => void searchPlaces()} disabled={searching || query.trim().length < 3} title="Search answer place">{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}<span>Search</span></button></div>{searchMessage && <small className="place-search-message" aria-live="polite">{searchMessage}</small>}{mapsNeedConfiguration && <button className="inline-action" onClick={configureMaps}><Settings2 size={13}/> Open Google Maps settings</button>}{places.length > 0 && <div className="place-results">{places.map(place => <button key={place.id || `${place.latitude}:${place.longitude}`} onClick={() => choosePlace(place)}><MapPin size={14}/><span><b>{place.name}</b>{place.formattedAddress && <small>{place.formattedAddress}</small>}</span></button>)}</div>}</div>
+          <div className="field"><span>Find coordinates from a place description</span><small>Google Places searches first. When it finds nothing, DeepSeek may rewrite the description once; no result is accepted until you confirm the Pin.</small><div className="search-row"><input value={query} placeholder="Search city, district or landmark" onChange={event => {setQuery(event.target.value); setPlaces([]); setSearchOutcome(null); setSearchMessage(''); setMapsNeedConfiguration(false);}} onKeyDown={event => {if (event.key === 'Enter') {event.preventDefault(); void searchPlaces();}}}/><button className="subtle-btn" onClick={() => void searchPlaces()} disabled={searching || query.trim().length < 3} title="Search answer place">{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}<span>Search</span></button></div>{searchOutcome?.source === 'interpreted' && <div className="place-interpretation"><span><Sparkles size={13}/> Searched as</span><strong>{searchOutcome.queryUsed}</strong>{searchOutcome.interpretation?.uncertainty && <small>Uncertainty preserved: {searchOutcome.interpretation.uncertainty}</small>}</div>}{searchMessage && <small className="place-search-message" aria-live="polite">{searchMessage}</small>}{mapsNeedConfiguration && <button className="inline-action" onClick={configureMaps}><Settings2 size={13}/> Open AI & Places settings</button>}{places.length > 0 && searchOutcome?.source === 'direct' && <button className="inline-action reinterpret-action" disabled={searching} onClick={() => void searchPlaces('forced')}><Sparkles size={13}/> Try another interpretation</button>}{places.length > 0 && <div className="place-results">{places.map(place => <button key={place.id || `${place.latitude}:${place.longitude}`} onClick={() => choosePlace(place)}><MapPin size={14}/><span><b>{place.name}</b>{place.formattedAddress && <small>{place.formattedAddress}</small>}</span></button>)}</div>}</div>
           <button className="outline-btn full" onClick={openMap}><MapPin size={16}/> {draft.confirmed ? 'Edit confirmed Pin' : 'Open map & confirm Pin'}</button>
           <label className="field">Position precision<select value={draft.precision} onChange={event => editDraft('precision', event.target.value as Precision)}><option value="exact">Exact GPS</option><option value="approximate">Approximate location</option></select></label>
           <label className="field">Accepted answer radius<select value={draft.answerRadius} onChange={event => editDraft('answerRadius', Number(event.target.value) as AnswerRadius)}>{ANSWER_RADIUS_OPTIONS.map(radius => <option value={radius} key={radius}>{radius} km</option>)}</select><small>The map shows this private area so you can check whether the Pin and tolerance match the photo.</small></label>
           <label className="field">Difficulty<select value={draft.difficulty} onChange={event => editDraft('difficulty', event.target.value as Difficulty)}><option value="easy">Easy — obvious landmarks</option><option value="medium">Medium — some clues</option><option value="hard">Hard — few clues</option></select></label>
-          {photo.guess?.confirmed && <div className="hint-card"><strong>Test the grading rules</strong><label className="field">Text answer<input value={previewText} onChange={event => setPreviewText(event.target.value)} placeholder="Try Tokyo, Yokohama…"/></label><button className="subtle-btn" disabled={!previewText.trim()} onClick={async () => {try {setGradeResult(await api.gradeText(photo.id, previewText));} catch (error) {toast(String(error), true);}}}><Sparkles size={13}/> Grade text</button><div className="two-col"><label className="field">Test latitude<input type="number" step="any" value={previewLat} onChange={event => setPreviewLat(event.target.value)}/></label><label className="field">Test longitude<input type="number" step="any" value={previewLng} onChange={event => setPreviewLng(event.target.value)}/></label></div><button className="subtle-btn" disabled={!previewLat || !previewLng} onClick={async () => {try {setGradeResult(await api.gradePin(photo.id, Number(previewLat), Number(previewLng)));} catch (error) {toast(String(error), true);}}}><MapPin size={13}/> Grade Pin</button>{gradeResult && <p><b>{gradeResult.result.toUpperCase()} · {gradeResult.score.toLocaleString()} / 5,000</b><br/>{gradeResult.explanation}</p>}</div>}
+          {photo.guess?.confirmed && <div className="hint-card"><strong>Test the Pin grading rules</strong><p className="small muted">This local preview uses the same distance and answer-radius rules as the game.</p><div className="two-col"><label className="field">Test latitude<input type="number" step="any" value={previewLat} onChange={event => setPreviewLat(event.target.value)}/></label><label className="field">Test longitude<input type="number" step="any" value={previewLng} onChange={event => setPreviewLng(event.target.value)}/></label></div><button className="subtle-btn" disabled={!previewLat || !previewLng} onClick={async () => {try {setGradeResult(await api.gradePin(photo.id, Number(previewLat), Number(previewLng)));} catch (error) {toast(String(error), true);}}}><MapPin size={13}/> Grade Pin</button>{gradeResult && <p><b>{gradeResult.result.toUpperCase()} · {gradeResult.score.toLocaleString()} / 5,000</b><br/>{gradeResult.explanation}</p>}</div>}
           <div className="hint-card">True coordinates remain in your private local SQLite database and are never included in the public export.</div>
         </>}
       </div>

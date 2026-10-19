@@ -12,7 +12,7 @@ A privacy-minded, local-first photo CMS for a future Next.js photography portfol
 - Guess Where place search and a world-map pin editor; EXIF GPS may seed a Pin but never confirms it automatically.
 - Collections (a photo may belong to multiple), basic bulk collection/tag edits.
 - Independent Guess Where pool with confirmed coordinates, precision and difficulty; saved locally in SQLite.
-- Private Guess Where answer names/descriptions and a 1/10/50/100 km radius (10 km by default), plus local previews for map-pin and online language-model text grading.
+- Private Guess Where answer names/descriptions and a 1/10/50/100 km radius (10 km by default), plus a local map-pin grading preview.
 - Local export of optimized WebP images and **public-only** JSON for a Next.js website.
 - Opt-in Git `commit` and `push` of **only managed photo export files** to an existing remote, with explicit confirmation.
 - Needs Review contains only imported photos whose complete review has not yet been saved.
@@ -92,18 +92,9 @@ Private data is stored under `.local/` beside the code:
 
 This version does not migrate metadata from an older Photo Booth database. Start with a fresh `.local/studio.sqlite3`; original image files are independent and are never rewritten by metadata editing.
 
-## Optional text-answer grading preview
+## AI-assisted place search
 
-Map-pin grading works locally without an API key. Text grading sends the private canonical answer context and the player's test answer to an OpenAI-compatible chat-completions API. Configure the backend process with:
-
-```bash
-export PHOTO_BOOTH_LLM_API_KEY="your-key"
-export PHOTO_BOOTH_LLM_MODEL="your-model"
-# Optional, defaults to https://api.openai.com/v1
-export PHOTO_BOOTH_LLM_BASE_URL="https://api.openai.com/v1"
-```
-
-The key is read only by the FastAPI process and is never stored in SQLite, returned to the frontend, or written into public exports. If these variables are absent or the provider returns malformed data, Photo Booth reports that text grading is unavailable instead of guessing a result.
+Map-pin grading works locally without an API key. DeepSeek is used only as a bounded fallback when Google Places cannot understand a location description; it never receives the private answer Pin, radius, or score. Configure Google Maps and DeepSeek from **AI & Places**. Full keys are stored in macOS Keychain rather than SQLite or environment files.
 
 The backend listens only on `127.0.0.1`; do not expose it publicly. Photo exports are re-encoded into WebP without EXIF or GPS, and generated JSON excludes exact coordinates. Do not commit `.local/` to Git even in a private repository.
 

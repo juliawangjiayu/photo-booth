@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from .db import DATA_DIR, ORIGINALS, THUMBS, PREVIEWS, connect, setting, set_setting
 from .images import process_upload
 from .publish import collect, export_site, publish_git
-from .grading import grade_pin, grade_text
+from .grading import grade_pin
 from .review import ReviewValidationError, apply_review, validate_review_date
 from .secret_store import SecretStore, get_secret_store
 from .ai_config import (
@@ -134,9 +134,6 @@ class PhotoReviewInput(BaseModel):
 class PinGradeInput(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-
-class TextGradeInput(BaseModel):
-    answer: str = Field(min_length=1, max_length=300)
 
 class SettingInput(BaseModel):
     web_root: str | None = None
@@ -443,14 +440,6 @@ def load_playable_guess(conn, photo_id: str):
 def grade_pin_preview(photo_id: str, body: PinGradeInput, conn=Depends(db)):
     entry = load_playable_guess(conn, photo_id)
     return grade_pin(entry["latitude"], entry["longitude"], body.latitude, body.longitude, entry["answer_radius_km"])
-
-@app.post("/api/guess/{photo_id}/grade-text")
-def grade_text_preview(photo_id: str, body: TextGradeInput, conn=Depends(db)):
-    entry = load_playable_guess(conn, photo_id)
-    try:
-        return grade_text(entry, body.answer.strip())
-    except Exception as exc:
-        raise HTTPException(503, str(exc)[:500])
 
 @app.get("/api/settings")
 def get_settings(conn=Depends(db)):
