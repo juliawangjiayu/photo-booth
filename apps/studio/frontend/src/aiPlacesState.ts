@@ -13,6 +13,27 @@ export type AiPlaceTestView = {
   testMatchesDraft: boolean;
 };
 
+export type AiConfigLifecycleStep = {
+  id: 'draft' | 'test' | 'activate' | 'sync';
+  state: 'complete' | 'current' | 'ready' | 'pending';
+};
+
+export function aiConfigLifecycle(
+  draft: AiPlaceDraft,
+  active: Pick<AiPlaceVersion, 'version' | 'config_hash'> | null,
+  draftDirty: boolean,
+): AiConfigLifecycleStep[] {
+  const exactDraftTested = !draftDirty && canActivateAiDraft(draft);
+  const draftIsActive = !draftDirty && active?.config_hash === draft.config_hash;
+
+  return [
+    {id: 'draft', state: draftDirty ? 'current' : 'complete'},
+    {id: 'test', state: exactDraftTested ? 'complete' : draftDirty ? 'pending' : 'current'},
+    {id: 'activate', state: draftIsActive ? 'complete' : exactDraftTested ? 'current' : 'pending'},
+    {id: 'sync', state: active ? 'ready' : 'pending'},
+  ];
+}
+
 export function editAiDraft(draft: AiPlaceDraft, changes: AiDraftInput): AiPlaceDraft {
   return {
     ...draft,

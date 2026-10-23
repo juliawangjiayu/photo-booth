@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  aiConfigLifecycle,
   applyAiTestResult,
   canPublishActiveConfig,
   canActivateAiDraft,
@@ -104,4 +105,36 @@ test('restoring an immutable version creates an editable untested draft', () => 
   assert.equal(restored.test_state, 'untested');
   assert.equal(restored.tested_hash, null);
   assert.equal(restored.active_version, draft.active_version);
+});
+
+test('configuration lifecycle keeps an unsaved draft local and blocks test and activation', () => {
+  const lifecycle = aiConfigLifecycle(draft, null, true);
+  assert.deepEqual(
+    Object.fromEntries(lifecycle.map(step => [step.id, step.state])),
+    {draft: 'current', test: 'pending', activate: 'pending', sync: 'pending'},
+  );
+});
+
+test('configuration lifecycle completes test and activation only for the exact active hash', () => {
+  const lifecycle = aiConfigLifecycle(draft, {
+    version: 3,
+    config_hash: draft.config_hash,
+  }, false);
+  assert.deepEqual(
+    Object.fromEntries(lifecycle.map(step => [step.id, step.state])),
+    {draft: 'complete', test: 'complete', activate: 'complete', sync: 'ready'},
+  );
+});
+
+test('configuration lifecycle keeps the active version syncable while a newer draft is edited', () => {
+  const newerDraft = editAiDraft(draft, {model: 'deepseek-next'});
+  newerDraft.config_hash = 'hash-new-draft';
+  const lifecycle = aiConfigLifecycle(newerDraft, {
+    version: 3,
+    config_hash: draft.config_hash,
+  }, true);
+  assert.deepEqual(
+    Object.fromEntries(lifecycle.map(step => [step.id, step.state])),
+    {draft: 'current', test: 'pending', activate: 'pending', sync: 'ready'},
+  );
 });

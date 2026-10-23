@@ -174,6 +174,23 @@ Content-Type: application/json
 
 The versioned payload contains `schemaVersion`, version, provider, base URL, model, timeout, retry count, editable prompt, prompt hash, and an optional rotated DeepSeek key. The key is included only after an explicit **Replace production key** action; ordinary prompt releases do not resend it. Photo Booth must not log the request authorization header or secret field. A release is marked remotely published only after the endpoint returns the same version and prompt hash.
 
+## Configuration lifecycle and data ownership
+
+Photo Booth and the personal website do not share one physical database. Photo Booth's local SQLite database is the private authoring source; the website's Cloudflare D1 database is a deliberately small runtime replica containing only published records needed while Julia's Mac is offline.
+
+The lifecycle must be visible on the AI & Places page:
+
+1. **Draft** is an editable local working copy. Saving it changes SQLite only and never changes either website environment.
+2. **Test** marks only the exact current configuration hash as passed. Any later edit returns the draft to untested.
+3. **Activate** creates an immutable local version. Photo Booth runtime interpretation may use this active version.
+4. **Sync** copies only that active version to a website D1 database. Drafts are never synchronized.
+
+For local website testing, `npm run sync:ai-config` runs in the personal-website repository, reads the active version from the sibling Photo Booth SQLite file, and sends it to the authenticated local Worker on loopback. The local Worker gets its DeepSeek key from `.dev.vars`; the command never copies the macOS Keychain secret.
+
+For online deployment, Photo Booth sends the same versioned non-secret payload to the configured HTTPS Worker endpoint. The production Worker reads its normal DeepSeek key from Cloudflare Secrets unless Julia explicitly chooses **Publish + replace production key**. The production D1 database also owns public runtime state such as game sessions, scores, and challenge links; those records do not flow back into Photo Booth.
+
+Changing a prompt, model, timeout, or retry count after the software is installed changes database records rather than source-code files. Source code changes only when the lifecycle or schema itself changes.
+
 ## Privacy and failure rules
 
 - Original photographs are never modified or sent to Google or DeepSeek by this feature.

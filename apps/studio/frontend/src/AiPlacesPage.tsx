@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {api} from './api';
-import {canActivateAiDraft, canPublishActiveConfig, clearSecretInput, editAiDraft} from './aiPlacesState';
+import {aiConfigLifecycle, canActivateAiDraft, canPublishActiveConfig, clearSecretInput, editAiDraft} from './aiPlacesState';
 import {loadGoogleMaps, searchGooglePlaces} from './googleMaps';
 import type {
   AiDraftInput,
@@ -324,6 +324,11 @@ export default function AiPlacesPage({notify}: Props) {
   const remoteLive = Boolean(activeVersion && config?.remote.lastPublishedVersion === activeVersion.version);
   const draftHash = useMemo(() => config?.draft.config_hash.slice(0, 10) ?? '—', [config]);
 
+  const lifecycle = useMemo(
+    () => config ? aiConfigLifecycle(config.draft, activeVersion, draftDirty) : [],
+    [activeVersion, config, draftDirty],
+  );
+
   if (!config) {
     return <section className="ai-loading" aria-live="polite"><LoaderCircle className="spin" size={20}/> Loading local configuration…</section>;
   }
@@ -332,9 +337,51 @@ export default function AiPlacesPage({notify}: Props) {
     <div className="ai-tabs" role="tablist" aria-label="AI & Places sections">
       <button role="tab" aria-selected={tab === 'model'} className={tab === 'model' ? 'active' : ''} onClick={() => setTab('model')}><Sparkles size={16}/> Model & prompt</button>
       <button role="tab" aria-selected={tab === 'test'} className={tab === 'test' ? 'active' : ''} onClick={() => setTab('test')}><Search size={16}/> Test configuration</button>
-      <button role="tab" aria-selected={tab === 'versions'} className={tab === 'versions' ? 'active' : ''} onClick={() => setTab('versions')}><Clock3 size={16}/> Published versions</button>
+      <button role="tab" aria-selected={tab === 'versions'} className={tab === 'versions' ? 'active' : ''} onClick={() => setTab('versions')}><Clock3 size={16}/> Versions & sync</button>
     </div>
     <p className="ai-live-status" aria-live="polite">{status || 'Secrets stay in macOS Keychain; only non-secret configuration is versioned.'}</p>
+
+    <section className="ai-lifecycle" aria-labelledby="ai-lifecycle-title">
+      <div className="ai-lifecycle-heading">
+        <div><span className="ai-kicker">CONFIGURATION LIFECYCLE</span><h2 id="ai-lifecycle-title">Draft changes are never live automatically</h2></div>
+        <p>Complete each stage deliberately. Sync always reads the immutable active version, never the editable draft.</p>
+      </div>
+      <ol>
+        {lifecycle.map((step, index) => {
+          const copy = {
+            draft: {
+              title: 'Draft',
+              detail: draftDirty
+                ? 'Editable working copy with unsaved changes. It affects no runtime.'
+                : 'Saved in Photo Booth SQLite. It still affects no runtime.',
+            },
+            test: {
+              title: 'Test',
+              detail: canActivateAiDraft(config.draft) && !draftDirty
+                ? 'A live check passed for this exact configuration hash.'
+                : 'Run a live DeepSeek + Google check for the exact saved draft.',
+            },
+            activate: {
+              title: 'Activate',
+              detail: activeVersion
+                ? `Photo Booth currently has immutable version ${activeVersion.version} active.`
+                : 'Creates the immutable version Photo Booth may use.',
+            },
+            sync: {
+              title: 'Sync',
+              detail: activeVersion
+                ? `Only active version ${activeVersion.version} can be copied to a website D1 database.`
+                : 'Available only after a tested draft has been activated.',
+            },
+          }[step.id];
+          return <li key={step.id} className={`lifecycle-${step.state}`}>
+            <span className="lifecycle-marker" aria-hidden="true">{step.state === 'complete' ? <Check size={16}/> : index + 1}</span>
+            <div><strong>{copy.title}</strong><small>{copy.detail}</small></div>
+            <span className="lifecycle-state">{step.state}</span>
+          </li>;
+        })}
+      </ol>
+    </section>
 
     {tab === 'model' && <div className="ai-config-layout">
       <div className="ai-card ai-main-card">
@@ -398,6 +445,7 @@ export default function AiPlacesPage({notify}: Props) {
       <div className="ai-card version-card"><div className="ai-card-head"><div><span className="ai-kicker">IMMUTABLE HISTORY</span><h2>Local activated versions</h2></div><button className="outline-btn" disabled={busy} onClick={() => void reload()}><RefreshCw size={14}/> Refresh</button></div>
         {versions.length ? <div className="version-list">{versions.map(version => <article key={version.version}><div className="version-number">v{version.version}</div><div className="version-details"><div><strong>{version.model}</strong><span className={`status-pill ${version.lifecycle_state === 'active' ? 'positive' : ''}`}>{version.lifecycle_state}</span></div><p>{version.test_summary || 'Test passed'}</p><small>{dateLabel(version.activated_at)} · <code>{version.config_hash.slice(0, 10)}</code></small></div><button className="outline-btn" disabled={busy} onClick={() => void restore(version.version)}><RotateCcw size={14}/> Restore as draft</button></article>)}</div> : <p className="ai-empty">No versions have been activated yet.</p>}
       </div>
+      <div className="ai-card local-sync-card"><div className="ai-card-head"><div><span className="ai-kicker">LOCAL WEBSITE</span><h2>Sync the active version to local D1</h2></div><MapPinned size={19}/></div><p>Start the personal website Worker, then run this from the sibling <code>juliawangjiayu.github.io</code> folder:</p><code className="sync-command">npm run sync:ai-config</code><div className="sync-explanation"><ShieldCheck size={18}/><span><strong>Drafts and Keychain secrets stay here.</strong><small>The command reads only the active version. The local Worker reads its separate DeepSeek key from <code>.dev.vars</code>.</small></span></div></div>
       <div className="ai-card remote-config-card"><div className="ai-card-head"><div><span className="ai-kicker">SECURE CONNECTION</span><h2>Website publishing endpoint</h2></div><ExternalLink size={19}/></div><p>The public website receiver is optional. The endpoint is stored in SQLite; the publisher token stays in macOS Keychain and is never shown again.</p><div className="remote-form"><label className="field">HTTPS website endpoint<input inputMode="url" value={remoteEndpoint} onChange={event => {setRemoteEndpoint(event.target.value); setRemoteDirty(true);}} placeholder="https://photos.example.com"/><small>Photo Booth appends <code>/api/admin/ai-place-config</code>.</small></label><label className="field">Replace publisher token <span className="optional">{config.remote.tokenConfigured ? `configured · ${config.remote.tokenMask}` : 'not configured'}</span><input type="password" autoComplete="new-password" value={publisherToken} onChange={event => {setPublisherToken(event.target.value); setRemoteDirty(true);}} placeholder={config.remote.tokenConfigured ? 'Paste only to replace' : 'Paste publisher token'}/></label></div><div className="ai-action-row"><button className="outline-btn" disabled={busy || !remoteDirty} onClick={() => void saveRemote()}><Save size={14}/> Save connection</button>{config.remote.tokenConfigured && <button className="text-danger" onClick={() => void clearPublisherToken()}>Remove token</button>}</div></div>
       <div className="ai-card future-publish"><div><ExternalLink size={19}/><span><strong>{publishReady ? `Version ${activeVersion?.version} is ready to publish` : 'Remote release is locked'}</strong><small>{publishReady ? 'Only versioned model and prompt settings are sent. Private photo answers and scoring data are excluded.' : 'Connect the website, then test and activate the exact current draft.'}</small></span></div><div className="publish-button-stack"><button className="primary-btn" disabled={busy || !publishReady} onClick={() => void publishRemote(false)}>Publish to website</button><button className="outline-btn" disabled={busy || !publishReady || !config.secret.configured} onClick={() => void publishRemote(true)}>Publish + replace production key</button></div></div>
     </div>}

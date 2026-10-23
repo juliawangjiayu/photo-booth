@@ -104,7 +104,9 @@ Configure it under **AI & Places**:
 2. In **Test configuration**, try real examples. Photo Booth calls DeepSeek with the draft, displays the normalized Google query and uncertainty, then shows live Google Places candidates and separate latencies. Ordinary photo editing uses only the locally active version and never marks a draft as tested.
 3. Any draft or secret edit invalidates the previous test. Only the exact tested draft hash can be activated.
 4. **Activate as new version** creates immutable local history. Restoring an old version copies it into an untested editable draft; it never rewrites history.
-5. **Published versions** remains useful while disconnected. Local activation and photo editing do not require a future website endpoint.
+5. **Versions & sync** distinguishes the local active version, local website D1 synchronization, and optional production publication.
+
+The page keeps the complete lifecycle visible: **Draft** is only an editable working copy in local SQLite; **Test** approves one exact hash; **Activate** creates the immutable version Photo Booth may use; and **Sync** is the only stage that copies an active version to a website D1 database. Saving or testing a draft never changes either website environment.
 
 The editable prompt is wrapped in a code-enforced safety envelope. Malformed model output, timeouts, invalid keys, and vague descriptions are recoverable errors; manual Pin entry remains available. Full Google, DeepSeek, and publisher credentials are stored in macOS Keychain rather than SQLite, `.env`, or public exports.
 
@@ -128,9 +130,11 @@ If the website folder is an existing Git repository with an `origin` remote and 
 
 **Game answer sync is intentionally not implemented in v0.1.** Answers remain in your local SQLite database until a secure, authenticated API for Cloudflare D1 exists; this avoids leaking the quiz answers into a public Git repo or static JSON.
 
-### Optional AI configuration publication
+### AI configuration synchronization
 
-The **Published versions** tab can save a future website's HTTPS base endpoint and a publisher token. Until that separate website implements the receiver, leave it disconnected. The token stays in macOS Keychain; only the endpoint and non-secret receipt are stored in SQLite.
+For local personal-website testing, start the sibling website Worker, then run `npm run sync:ai-config` from `../juliawangjiayu.github.io`. That command reads only the active row from Photo Booth SQLite and copies the non-secret version to local D1. It never reads the editable draft or macOS Keychain; the local Worker gets its DeepSeek key from its own `.dev.vars`.
+
+For production, the **Versions & sync** tab can save the website's HTTPS base endpoint and a publisher token. The token stays in macOS Keychain; only the endpoint and non-secret receipt are stored in SQLite.
 
 Photo Booth publishes only the exact tested and locally active version. Ordinary releases contain the provider, endpoint, model, timeout, retry count, editable prompt, version and prompt hash. They contain no photos, Guess Where answers, coordinates, radii, scores, Google key, or publisher token. **Publish + replace production key** is a separate confirmed action that adds the current DeepSeek key to that one request; ordinary releases never resend it. Redirects are rejected, releases are idempotent, and the local version is marked remote only after a matching version/hash receipt. See [the publishing contract](docs/ai-place-publishing-contract.md).
 
