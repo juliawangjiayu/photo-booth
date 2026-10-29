@@ -917,3 +917,68 @@ def test_git_publish_from_nested_monorepo(client,tmp_path):
     assert 'unrelated.txt' in git('status','--short')
     assert not any('unrelated' in name for name in result['files'])
     assert 'apps/web/src/generated/photography.json' in result['files']
+
+
+def test_about_photo_upload_is_independent_from_the_photo_library(client, tmp_path):
+    source = photo_bytes(color=(190, 110, 140))
+    response = client.post(
+        '/api/settings/about-photo',
+        files={'file': ('julia-about.jpg', source, 'image/jpeg')},
+    )
+
+    assert response.status_code == 200, response.text
+    about_photo = response.json()['about_photo']
+    assert about_photo['name'] == 'julia-about.jpg'
+    assert client.get(about_photo['url']).content == source
+    assert client.get('/api/photos').json() == []
+    assert client.get('/api/stats').json()['photos'] == 0
+    assert str(tmp_path) not in json.dumps(client.get('/api/settings').json())
+
+
+def test_about_photo_upload_rejects_unsupported_files(client):
+    response = client.post(
+        '/api/settings/about-photo',
+        files={'file': ('notes.txt', b'not an image', 'text/plain')},
+    )
+
+    assert response.status_code == 400
+    assert client.get('/api/settings').json()['about_photo'] is None
+
+
+def test_about_photo_export_is_separate_from_the_public_photo_catalog(client, tmp_path):
+    about_source = photo_bytes(color=(190, 110, 140))
+    response = client.post(
+        '/api/settings/about-photo',
+        files={'file': ('julia-about.jpg', about_source, 'image/jpeg')},
+    )
+    assert response.status_code == 200, response.text
+
+    photo_id = upload(
+        client,
+        filename='collection-photo.jpg',
+        image_data=photo_bytes(color=(30, 80, 120)),
+    )
+    complete_review(client, photo_id, taken_at='2025-06')
+    web_root = tmp_path / 'website'
+    web_root.mkdir()
+    (web_root / 'package.json').write_text('{"name":"personal-site"}', encoding='utf-8')
+
+    exported = client.post('/api/publish/export', json={'web_root': str(web_root)})
+
+    assert exported.status_code == 200, exported.text
+    about_config = json.loads(
+        (web_root / 'src' / 'generated' / 'about-photo.json').read_text(encoding='utf-8')
+    )
+    assert about_config == {
+        'src': '/about/about-photo.webp',
+        'width': 640,
+        'height': 450,
+    }
+    catalog = json.loads(
+        (web_root / 'src' / 'generated' / 'photography.json').read_text(encoding='utf-8')
+    )
+    assert [photo['id'] for photo in catalog] == [photo_id]
+    with Image.open(web_root / 'public' / 'about' / 'about-photo.webp') as image:
+        assert image.format == 'WEBP'
+        assert image.size == (640, 450)
+        assert not image.getexif()

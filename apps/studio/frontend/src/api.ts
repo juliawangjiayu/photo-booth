@@ -44,6 +44,11 @@ export const api = {
   gradePin: (id:string, latitude:number, longitude:number) => request<GradeResult>(`/api/guess/${id}/grade-pin`, json('POST',{latitude,longitude})),
   settings: () => request<Settings>('/api/settings'),
   updateSettings: (settings: Partial<Settings>) => request<Settings>('/api/settings', json('PATCH', settings)),
+  uploadAboutPhoto: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<Settings>('/api/settings/about-photo', { method: 'POST', body: form });
+  },
   googleMapsConfig: () => request<GoogleMapsConfig>('/api/maps/config'),
   updateGoogleMapsConfig: (config: GoogleMapsConfigInput) => request<GoogleMapsConfig>('/api/maps/config', json('PUT', config)),
   googleMapsBootstrap: () => request<GoogleMapsBootstrap>('/api/maps/bootstrap'),

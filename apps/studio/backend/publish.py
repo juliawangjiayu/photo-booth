@@ -7,10 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from PIL import Image
 from .db import connect
+from .about_photo import export_about_photo
 from .images import make_resized
 from .review import validate_review_date
 
-MANAGED_PATHS = ["public/photos", "src/generated/photography.json", "src/generated/collections.json"]
+MANAGED_PATHS = [
+    "public/photos",
+    "src/generated/photography.json",
+    "src/generated/collections.json",
+    "src/generated/about-photo.json",
+]
 
 def collect(conn):
     photo_rows = conn.execute("SELECT * FROM photos ORDER BY created_at DESC, id").fetchall()
@@ -73,9 +79,13 @@ def export_site(web_root: str) -> dict:
         (generated / "collections.json").write_text(json.dumps([
             {"id": c["id"], "title": c["title"], "description": c["description"]} for c in collections
         ], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        about_photo = export_about_photo(conn, root, generated)
         timestamp = datetime.now(timezone.utc).isoformat()
         conn.executemany("UPDATE photos SET status='published', published_at=? WHERE id=?", [(timestamp, p["id"]) for p in photos])
-        result = {"count": len(photos), "skipped": issues, "webRoot": str(root), "files": MANAGED_PATHS}
+        managed_paths = [*MANAGED_PATHS]
+        if about_photo is not None:
+            managed_paths.append("public/about/about-photo.webp")
+        result = {"count": len(photos), "skipped": issues, "webRoot": str(root), "files": managed_paths}
         conn.execute("INSERT INTO publish_records(target,photo_count,details) VALUES(?,?,?)", (str(root), len(photos), json.dumps(result)))
         conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('web_root',?)", (str(root),))
         conn.commit()
@@ -102,6 +112,9 @@ def publish_git(web_root: str, message: str) -> dict:
     except (OSError, ValueError):
         raise ValueError("Selected Next.js folder is not inside a Git repository")
     relative_paths = [str(prefix / p) for p in MANAGED_PATHS]
+    about_asset = root / "public" / "about" / "about-photo.webp"
+    if about_asset.is_file():
+        relative_paths.append(str(prefix / "public/about/about-photo.webp"))
     # Never include unrelated user changes or pre-staged files in our commit.
     if run_git(repo_root, "diff", "--cached", "--name-only"):
         raise ValueError("Existing staged changes detected. Commit/unstage them before Photo Booth publishes.")

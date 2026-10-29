@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from .db import DATA_DIR, ORIGINALS, THUMBS, PREVIEWS, connect, setting, set_setting
 from .images import process_upload
+from .about_photo import about_photo_path, about_photo_state, save_about_photo
 from .publish import collect, export_site, publish_git
 from .grading import grade_pin
 from .review import ReviewValidationError, apply_review, validate_review_date
@@ -456,7 +457,7 @@ def grade_pin_preview(photo_id: str, body: PinGradeInput, conn=Depends(db)):
 
 @app.get("/api/settings")
 def get_settings(conn=Depends(db)):
-    return {"web_root": setting(conn,"web_root")}
+    return {"web_root": setting(conn,"web_root"), "about_photo": about_photo_state(conn)}
 
 @app.patch("/api/settings")
 def update_settings(body: SettingInput, conn=Depends(db)):
@@ -465,6 +466,29 @@ def update_settings(body: SettingInput, conn=Depends(db)):
             conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key,value.strip()))
     conn.commit()
     return get_settings(conn)
+
+
+@app.post("/api/settings/about-photo")
+def upload_about_photo(file: UploadFile = File(...), conn=Depends(db)):
+    try:
+        key, name = save_about_photo(file.filename or "", file.file)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    set_setting(conn, "about_photo_file", key)
+    set_setting(conn, "about_photo_name", name)
+    conn.commit()
+    return get_settings(conn)
+
+
+@app.get("/api/settings/about-photo")
+def get_about_photo(v: str = "", conn=Depends(db)):
+    key = setting(conn, "about_photo_file")
+    if not key or (v and v != key):
+        raise HTTPException(404, "About photo not found")
+    path = about_photo_path(key)
+    if not path or not path.is_file():
+        raise HTTPException(404, "About photo not found")
+    return FileResponse(path, headers={"Cache-Control": "no-store"})
 
 
 def _masked_secret(value: str) -> str:
